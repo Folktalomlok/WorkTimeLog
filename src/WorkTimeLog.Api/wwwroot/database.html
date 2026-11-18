@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0d6efd">
+  <title>ดูฐานข้อมูล — บันทึกเวลาปฏิบัติงาน</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap">
+  <link rel="stylesheet" href="css/site.css">
+</head>
+<body>
+  <nav class="navbar navbar-dark bg-primary sticky-top shadow-sm">
+    <div class="container-lg flex-nowrap">
+      <span class="navbar-brand fw-semibold text-truncate"><i class="bi bi-database me-2"></i>ดูฐานข้อมูล</span>
+      <a class="btn btn-sm btn-light flex-shrink-0" href="index.html"><i class="bi bi-arrow-left me-1"></i>กลับหน้าบันทึก</a>
+    </div>
+  </nav>
+
+  <main class="container-lg py-3">
+    <!-- error -->
+    <div id="pageError" class="alert alert-danger d-none d-flex align-items-start gap-2" role="alert">
+      <i class="bi bi-exclamation-triangle-fill fs-5"></i>
+      <div class="flex-grow-1" id="pageErrorText"></div>
+    </div>
+
+    <!-- ปุ่ม -->
+    <div class="d-flex flex-wrap gap-2 mb-3">
+      <button class="btn btn-primary" id="refreshBtn"><i class="bi bi-arrow-clockwise me-1"></i>รีเฟรช</button>
+      <a class="btn btn-outline-success" href="api/database/export/entries.csv" download><i class="bi bi-filetype-csv me-1"></i>ดาวน์โหลด CSV</a>
+      <a class="btn btn-outline-secondary" href="api/database/download" download><i class="bi bi-file-earmark-arrow-down me-1"></i>ดาวน์โหลดไฟล์ .db</a>
+      <span class="ms-auto small text-body-secondary align-self-center" id="updatedAt"></span>
+    </div>
+
+    <!-- การ์ดสรุป -->
+    <div class="row g-2 mb-2">
+      <div class="col-6 col-md">
+        <div class="stat-tile h-100">
+          <div class="small text-body-secondary"><i class="bi bi-hdd me-1"></i>ชนิดฐานข้อมูล</div>
+          <div class="fs-5 fw-bold" id="cType">–</div>
+          <div class="small text-body-secondary" id="cVersion"></div>
+        </div>
+      </div>
+      <div class="col-6 col-md">
+        <div class="stat-tile h-100">
+          <div class="small text-body-secondary"><i class="bi bi-folder me-1"></i>จำนวนโครงการ</div>
+          <div class="fs-4 fw-bold" id="cProjects">–</div>
+        </div>
+      </div>
+      <div class="col-6 col-md">
+        <div class="stat-tile h-100">
+          <div class="small text-body-secondary"><i class="bi bi-list-check me-1"></i>จำนวนรายการ</div>
+          <div class="fs-4 fw-bold" id="cEntries">–</div>
+          <div class="small text-body-secondary" id="cActive"></div>
+        </div>
+      </div>
+      <div class="col-6 col-md">
+        <div class="stat-tile h-100">
+          <div class="small text-body-secondary"><i class="bi bi-clock me-1"></i>เวลารวม</div>
+          <div class="fs-4 fw-bold" id="cMinutes">–</div>
+          <div class="small text-body-secondary" id="cHours"></div>
+        </div>
+      </div>
+      <div class="col-12 col-md">
+        <div class="stat-tile h-100">
+          <div class="small text-body-secondary"><i class="bi bi-x-circle me-1"></i>รายการที่ยกเลิก</div>
+          <div class="fs-4 fw-bold" id="cCancelled">–</div>
+        </div>
+      </div>
+    </div>
+    <details class="small text-body-secondary mb-3">
+      <summary>รายละเอียดไฟล์ฐานข้อมูล</summary>
+      <div class="mt-1">Path: <code id="cPath" class="text-break"></code></div>
+      <div>ขนาดไฟล์: <span id="cSize"></span></div>
+      <div>จำนวนแถวแต่ละตาราง: <span id="cTables"></span></div>
+    </details>
+
+    <!-- แท็บ -->
+    <ul class="nav nav-pills nav-fill mb-3" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-projects" type="button" role="tab">
+          <i class="bi bi-folder me-1"></i>โครงการ <span class="badge text-bg-light" id="bProjects"></span>
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link active" data-bs-toggle="pill" data-bs-target="#tab-entries" type="button" role="tab">
+          <i class="bi bi-journal-text me-1"></i>บันทึกเวลา <span class="badge text-bg-light" id="bEntries"></span>
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-daily" type="button" role="tab">
+          <i class="bi bi-calendar3 me-1"></i>สรุปรายวัน <span class="badge text-bg-light" id="bDaily"></span>
+        </button>
+      </li>
+    </ul>
+
+    <div class="tab-content">
+      <!-- โครงการ -->
+      <section class="tab-pane fade" id="tab-projects" role="tabpanel">
+        <div class="card shadow-sm">
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 text-nowrap">
+              <thead class="table-light">
+                <tr>
+                  <th>Id</th><th>ชื่อโครงการ</th><th>สถานะ</th>
+                  <th class="text-end">จำนวนรายการ</th><th class="text-end">เวลารวม (นาที)</th>
+                </tr>
+              </thead>
+              <tbody id="projectRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- บันทึกเวลา -->
+      <section class="tab-pane fade show active" id="tab-entries" role="tabpanel">
+        <div class="card shadow-sm mb-2">
+          <div class="card-body">
+            <div class="row g-2 align-items-end">
+              <div class="col-12 col-md-5">
+                <label for="fSearch" class="form-label small mb-1">ค้นหา</label>
+                <div class="input-group">
+                  <span class="input-group-text"><i class="bi bi-search"></i></span>
+                  <input type="search" class="form-control" id="fSearch" placeholder="รายละเอียด, หมายเหตุ, โครงการ, Id">
+                </div>
+              </div>
+              <div class="col-6 col-md-2">
+                <label for="fFrom" class="form-label small mb-1">ตั้งแต่วันที่</label>
+                <input type="date" class="form-control" id="fFrom">
+              </div>
+              <div class="col-6 col-md-2">
+                <label for="fTo" class="form-label small mb-1">ถึงวันที่</label>
+                <input type="date" class="form-control" id="fTo">
+              </div>
+              <div class="col-8 col-md-2">
+                <label for="fStatus" class="form-label small mb-1">สถานะ</label>
+                <select class="form-select" id="fStatus">
+                  <option value="all">ทั้งหมด</option>
+                  <option value="active">ปกติ</option>
+                  <option value="cancelled">ยกเลิก</option>
+                </select>
+              </div>
+              <div class="col-4 col-md-1 d-grid">
+                <button class="btn btn-outline-secondary" id="clearFilter" title="ล้างตัวกรอง"><i class="bi bi-x-lg"></i></button>
+              </div>
+            </div>
+            <div class="small text-body-secondary mt-2" id="filterInfo"></div>
+          </div>
+        </div>
+        <div class="card shadow-sm">
+          <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+              <thead class="table-light text-nowrap">
+                <tr>
+                  <th>Id</th><th>วันที่</th><th>โครงการ</th><th style="min-width:200px">รายละเอียดงาน</th>
+                  <th class="text-end">นาที</th><th style="min-width:140px">หมายเหตุ</th><th>สถานะ</th>
+                  <th>สร้างเมื่อ</th><th>แก้ไขล่าสุด</th>
+                </tr>
+              </thead>
+              <tbody id="entryRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- สรุปรายวัน -->
+      <section class="tab-pane fade" id="tab-daily" role="tabpanel">
+        <div class="card shadow-sm">
+          <div class="table-responsive">
+            <table class="table align-middle mb-0 text-nowrap">
+              <thead class="table-light">
+                <tr>
+                  <th>วันที่</th><th class="text-end">รวม (นาที)</th><th class="text-end">เหลือ (นาที)</th>
+                  <th style="min-width:120px">ใช้ไป</th><th class="text-end">รายการ</th><th class="text-end">ยกเลิก</th><th>สถานะ</th>
+                </tr>
+              </thead>
+              <tbody id="dailyRows"></tbody>
+            </table>
+          </div>
+        </div>
+        <p class="small text-body-secondary mt-2">* ไม่นับรายการที่ยกเลิกในเวลารวม · กำหนดไม่เกิน 480 นาทีต่อวัน</p>
+      </section>
+    </div>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="js/database.js"></script>
+</body>
+</html>

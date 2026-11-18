@@ -3,8 +3,7 @@
 **/.vs/
 **/.vscode/
 **/TestResults/
-tests/**/bin/
-tests/**/obj/
+tests/
 **/*.db
 **/*.db-shm
 **/*.db-wal

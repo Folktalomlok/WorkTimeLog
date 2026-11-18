@@ -26,7 +26,8 @@ New-Item -ItemType Directory -Force $logDir | Out-Null
 
 function Stop-Tree([int]$ProcessId) {
     if (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue) {
-        & taskkill.exe /PID $ProcessId /T /F 2>&1 | Out-Null
+        # ผ่าน cmd เพื่อไม่ให้ข้อความ error ของ taskkill (เช่น process ลูกปิดไปแล้ว) ทำให้สคริปต์หยุด
+        cmd.exe /c "taskkill /PID $ProcessId /T /F >nul 2>&1"
     }
 }
 

@@ -41,6 +41,7 @@ builder.Services.AddDbContext<AppDbContext>(o => o.UseSqlite(cs.ToString()));
 builder.Services.AddScoped<TimeEntryService>();
 builder.Services.AddScoped<SummaryService>();
 builder.Services.AddScoped<ProjectService>();
+builder.Services.AddScoped<DatabaseService>();
 
 builder.Services
     .AddControllers(o => o.Filters.Add<ApiExceptionFilter>())
