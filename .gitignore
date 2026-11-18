@@ -1,0 +1,9 @@
+bin/
+obj/
+.vs/
+*.user
+TestResults/
+# ฐานข้อมูลที่สร้างตอนรัน (สร้างใหม่ได้จาก migration)
+*.db
+*.db-shm
+*.db-wal

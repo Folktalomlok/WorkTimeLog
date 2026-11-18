@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0d6efd">
+  <title>บันทึกเวลาปฏิบัติงาน</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap">
+  <link rel="stylesheet" href="css/site.css">
+</head>
+<body>
+  <nav class="navbar navbar-dark bg-primary sticky-top shadow-sm">
+    <div class="container-lg">
+      <span class="navbar-brand fw-semibold"><i class="bi bi-clock-history me-2"></i>บันทึกเวลาปฏิบัติงาน</span>
+    </div>
+  </nav>
+
+  <main class="container-lg py-3">
+    <!-- แท็บ -->
+    <ul class="nav nav-pills nav-fill mb-3" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button class="nav-link active" data-bs-toggle="pill" data-bs-target="#tab-log" type="button" role="tab">
+          <i class="bi bi-pencil-square me-1"></i>บันทึกเวลา
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="tab-summary-btn" data-bs-toggle="pill" data-bs-target="#tab-summary" type="button" role="tab">
+          <i class="bi bi-bar-chart me-1"></i>สรุปตามโครงการ
+        </button>
+      </li>
+    </ul>
+
+    <!-- ข้อความ error ระดับหน้า -->
+    <div id="pageError" class="alert alert-danger d-none d-flex align-items-start gap-2" role="alert">
+      <i class="bi bi-exclamation-triangle-fill fs-5"></i>
+      <div class="flex-grow-1" id="pageErrorText"></div>
+      <button type="button" class="btn-close" aria-label="ปิด" onclick="hidePageError()"></button>
+    </div>
+
+    <div class="tab-content">
+      <!-- ================= แท็บบันทึกเวลา ================= -->
+      <section class="tab-pane fade show active" id="tab-log" role="tabpanel">
+        <!-- เลือกวันที่ + progress -->
+        <div class="card shadow-sm mb-3">
+          <div class="card-body">
+            <label for="selectedDate" class="form-label fw-semibold mb-1">วันที่</label>
+            <div class="input-group mb-3">
+              <button class="btn btn-outline-secondary" type="button" id="prevDay" aria-label="วันก่อนหน้า"><i class="bi bi-chevron-left"></i></button>
+              <input type="date" class="form-control text-center" id="selectedDate">
+              <button class="btn btn-outline-secondary" type="button" id="nextDay" aria-label="วันถัดไป"><i class="bi bi-chevron-right"></i></button>
+              <button class="btn btn-outline-primary" type="button" id="todayBtn">วันนี้</button>
+            </div>
+
+            <div class="d-flex justify-content-between align-items-end mb-1">
+              <span class="fw-semibold" id="usageText">ใช้ไป 0 / 480 นาที</span>
+              <small class="text-body-secondary" id="remainText"></small>
+            </div>
+            <div class="progress usage-progress" role="progressbar" aria-label="เวลาที่ใช้ไป" aria-valuemin="0" aria-valuemax="480" id="usageProgress">
+              <div class="progress-bar bg-success" id="usageBar" style="width:0%"></div>
+            </div>
+            <small class="text-body-secondary d-block mt-1" id="countText"></small>
+          </div>
+        </div>
+
+        <div class="row g-3">
+          <!-- ฟอร์ม -->
+          <div class="col-lg-5">
+            <div class="card shadow-sm" id="formCard">
+              <div class="card-header d-flex align-items-center justify-content-between">
+                <span class="fw-semibold" id="formTitle"><i class="bi bi-plus-circle me-1"></i>เพิ่มรายการใหม่</span>
+                <span class="badge text-bg-warning d-none" id="editBadge">กำลังแก้ไข</span>
+              </div>
+              <div class="card-body">
+                <div id="formError" class="alert alert-danger d-none py-2" role="alert"></div>
+                <form id="entryForm" novalidate>
+                  <div class="mb-3">
+                    <label for="fDate" class="form-label">วันที่</label>
+                    <input type="date" class="form-control" id="fDate" required>
+                  </div>
+
+                  <div class="mb-3">
+                    <label for="fProject" class="form-label">โครงการ</label>
+                    <div class="input-group">
+                      <select class="form-select" id="fProject" required></select>
+                      <button class="btn btn-outline-primary" type="button" data-bs-toggle="modal" data-bs-target="#projectModal" title="เพิ่มโครงการใหม่">
+                        <i class="bi bi-plus-lg"></i><span class="d-none d-sm-inline ms-1">โครงการ</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div class="mb-3">
+                    <label for="fDescription" class="form-label">รายละเอียดงาน</label>
+                    <textarea class="form-control" id="fDescription" rows="2" maxlength="500" required placeholder="เช่น เขียนโปรแกรมส่วนหน้าจอบันทึก"></textarea>
+                  </div>
+
+                  <div class="mb-3">
+                    <label for="fMinutes" class="form-label">เวลาที่ใช้ (นาที)</label>
+                    <input type="number" class="form-control" id="fMinutes" min="1" max="480" step="1" inputmode="numeric" required placeholder="1 – 480">
+                    <div class="d-flex flex-wrap gap-2 mt-2" id="quickMinutes">
+                      <button type="button" class="btn btn-sm btn-outline-secondary" data-min="15">15</button>
+                      <button type="button" class="btn btn-sm btn-outline-secondary" data-min="30">30</button>
+                      <button type="button" class="btn btn-sm btn-outline-secondary" data-min="60">1 ชม.</button>
+                      <button type="button" class="btn btn-sm btn-outline-secondary" data-min="120">2 ชม.</button>
+                      <button type="button" class="btn btn-sm btn-outline-secondary" data-min="fill">ที่เหลือทั้งหมด</button>
+                    </div>
+                  </div>
+
+                  <div class="mb-3">
+                    <label for="fNote" class="form-label">หมายเหตุ <small class="text-body-secondary">(ไม่บังคับ)</small></label>
+                    <textarea class="form-control" id="fNote" rows="2" maxlength="500"></textarea>
+                  </div>
+
+                  <div class="d-grid gap-2 d-sm-flex">
+                    <button type="submit" class="btn btn-primary flex-sm-fill" id="saveBtn">
+                      <i class="bi bi-save me-1"></i><span id="saveBtnText">บันทึก</span>
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary d-none" id="cancelEditBtn">ยกเลิกการแก้ไข</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+
+          <!-- รายการของวัน -->
+          <div class="col-lg-7">
+            <div class="card shadow-sm">
+              <div class="card-header fw-semibold" id="listTitle">รายการของวันนี้</div>
+              <div class="card-body p-0">
+                <div id="emptyState" class="text-center text-body-secondary py-5 d-none">
+                  <i class="bi bi-inbox fs-1 d-block mb-2"></i>ยังไม่มีรายการในวันนี้
+                </div>
+                <!-- มือถือ: card -->
+                <div class="d-md-none p-2" id="entryCards"></div>
+                <!-- จอใหญ่: table -->
+                <div class="d-none d-md-block table-responsive">
+                  <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                      <tr>
+                        <th>โครงการ</th>
+                        <th>รายละเอียดงาน</th>
+                        <th class="text-end">นาที</th>
+                        <th class="text-end" style="width: 1%">จัดการ</th>
+                      </tr>
+                    </thead>
+                    <tbody id="entryRows"></tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= แท็บสรุป ================= -->
+      <section class="tab-pane fade" id="tab-summary" role="tabpanel">
+        <div class="card shadow-sm mb-3">
+          <div class="card-body">
+            <div class="row g-2 align-items-end">
+              <div class="col-6 col-md-4">
+                <label for="sFrom" class="form-label">ตั้งแต่วันที่</label>
+                <input type="date" class="form-control" id="sFrom">
+              </div>
+              <div class="col-6 col-md-4">
+                <label for="sTo" class="form-label">ถึงวันที่</label>
+                <input type="date" class="form-control" id="sTo">
+              </div>
+              <div class="col-12 col-md-4 d-grid">
+                <button class="btn btn-primary" id="summaryBtn"><i class="bi bi-search me-1"></i>แสดงสรุป</button>
+              </div>
+            </div>
+            <div class="d-flex flex-wrap gap-2 mt-2">
+              <button class="btn btn-sm btn-outline-secondary" data-range="week">สัปดาห์นี้</button>
+              <button class="btn btn-sm btn-outline-secondary" data-range="month">เดือนนี้</button>
+              <button class="btn btn-sm btn-outline-secondary" data-range="last30">30 วันล่าสุด</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card shadow-sm">
+          <div class="card-header fw-semibold" id="summaryTitle">สรุปเวลาแยกตามโครงการ</div>
+          <div class="card-body">
+            <div class="row g-2 mb-3 text-center">
+              <div class="col-6">
+                <div class="stat-tile">
+                  <div class="small text-body-secondary">เวลารวม</div>
+                  <div class="fs-4 fw-bold" id="sTotal">–</div>
+                </div>
+              </div>
+              <div class="col-6">
+                <div class="stat-tile">
+                  <div class="small text-body-secondary">จำนวนรายการ</div>
+                  <div class="fs-4 fw-bold" id="sCount">–</div>
+                </div>
+              </div>
+            </div>
+            <div id="summaryEmpty" class="text-center text-body-secondary py-4 d-none">ไม่มีข้อมูลในช่วงวันที่นี้</div>
+            <div id="summaryList"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Modal เพิ่มโครงการ -->
+  <div class="modal fade" id="projectModal" tabindex="-1" aria-labelledby="projectModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <form class="modal-content" id="projectForm" novalidate>
+        <div class="modal-header">
+          <h1 class="modal-title fs-5" id="projectModalLabel">เพิ่มโครงการใหม่</h1>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="ปิด"></button>
+        </div>
+        <div class="modal-body">
+          <div id="projectError" class="alert alert-danger d-none py-2"></div>
+          <label for="pName" class="form-label">ชื่อโครงการ</label>
+          <input type="text" class="form-control" id="pName" maxlength="100" required placeholder="เช่น วิชาการเขียนโปรแกรมเว็บ">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">ปิด</button>
+          <button type="submit" class="btn btn-primary">เพิ่มโครงการ</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast-container position-fixed bottom-0 start-50 translate-middle-x p-3">
+    <div id="toast" class="toast align-items-center border-0" role="status" aria-live="polite" aria-atomic="true">
+      <div class="d-flex">
+        <div class="toast-body" id="toastText"></div>
+        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="ปิด"></button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

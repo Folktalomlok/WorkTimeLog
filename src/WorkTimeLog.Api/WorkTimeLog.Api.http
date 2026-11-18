@@ -1,0 +1,18 @@
+@host = http://localhost:5000
+
+GET {{host}}/api/projects
+
+###
+GET {{host}}/api/entries?date=2026-11-18
+
+###
+GET {{host}}/api/summary/daily?date=2026-11-18
+
+###
+POST {{host}}/api/entries
+Content-Type: application/json
+
+{ "workDate": "2026-11-18", "projectId": 1, "description": "ทดสอบเกินเวลา", "minutes": 240 }
+
+###
+GET {{host}}/api/summary/by-project?from=2026-11-01&to=2026-11-30

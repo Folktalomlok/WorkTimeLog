@@ -1,0 +1,20 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run WorkTimeLog.Api",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build",
+      "program": "${workspaceFolder}/src/WorkTimeLog.Api/bin/Debug/net8.0/WorkTimeLog.Api.dll",
+      "cwd": "${workspaceFolder}/src/WorkTimeLog.Api",
+      "env": { "ASPNETCORE_ENVIRONMENT": "Development" },
+      "console": "integratedTerminal",
+      "serverReadyAction": {
+        "action": "openExternally",
+        "pattern": "Now listening on: http://0\.0\.0\.0:([0-9]+)",
+        "uriFormat": "http://localhost:%s"
+      }
+    }
+  ]
+}
