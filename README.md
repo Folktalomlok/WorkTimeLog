@@ -346,9 +346,17 @@ vercel.cmd --prod                                   # deploy production
 
 อัปเดตครั้งหน้า
 
-- ตอนนี้ deploy ด้วย CLI: แก้โค้ด → `vercel.cmd --prod`
-- ถ้าอยากให้ deploy อัตโนมัติเมื่อ `git push`: Vercel Dashboard → Project → Settings → **Git** → Connect `Folktalomlok/WorkTimeLog`
-  (ถ้าหา repo ไม่เจอ ให้ไปที่ GitHub → Settings → Applications → **Vercel** → Configure → Repository access → เพิ่ม `WorkTimeLog` เพราะ repo เป็น private)
+- โปรเจกต์เชื่อมกับ GitHub repo `Folktalomlok/WorkTimeLog` แล้ว (Vercel → Settings → Git = Connected)
+  → แก้โค้ด → `git commit` → `git push` → Vercel build และ deploy production ให้อัตโนมัติ (ประมาณ 1 นาที)
+- deploy เองด้วย CLI ก็ได้: `vercel.cmd --prod`
+- ⚠️ **แผน Hobby: ผู้เขียน commit ต้องเป็นเจ้าของทีม Vercel** ไม่อย่างนั้น deployment จะขึ้น `BLOCKED`
+  ("commit author doesn't have permission") — repo นี้ตั้ง author เฉพาะ repo ไว้แล้ว:
+  ```powershell
+  git config user.name  "Folktalomlok"
+  git config user.email "342279056+Folktalomlok@users.noreply.github.com"   # noreply ของบัญชี GitHub ที่ login Vercel
+  ```
+  ถ้า clone repo ใหม่ (เช่นใน Codespaces) ให้ตั้งสองบรรทัดนี้ก่อน commit
+- ถ้า Vercel หา repo ไม่เจอ (repo เป็น private): GitHub → Settings → Applications → **Vercel** → Configure → Repository access → เพิ่ม `WorkTimeLog`
 
 ข้อจำกัดของแผน Hobby / Container Runtime
 
