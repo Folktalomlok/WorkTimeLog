@@ -1,0 +1,18 @@
+# ไม่อัปโหลดขึ้น Vercel (ลดขนาด และกันข้อมูล/ความลับหลุด)
+**/bin/
+**/obj/
+**/.vs/
+**/TestResults/
+*.db
+*.db-shm
+*.db-wal
+**/*.db
+**/*.db-shm
+**/*.db-wal
+logs/
+.env*
+tests/
+database/
+docs/
+.vscode/
+*.ps1

@@ -10,3 +10,10 @@ TestResults/
 
 # log จาก start-mobile.ps1
 logs/
+
+# Vercel CLI (vercel link)
+.vercel/
+.env*.local
+
+.vercel
+.env*

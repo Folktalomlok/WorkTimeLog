@@ -3,6 +3,8 @@
 ระบบสำหรับนักศึกษา 1 คน ใช้บันทึกเวลาที่ใช้กับงาน/โครงการในแต่ละวัน จำกัดเวลารวมไม่เกิน **480 นาทีต่อวัน**
 ใช้งานได้ทั้งบนคอมพิวเตอร์และมือถือ (responsive)
 
+🔗 **Demo (Vercel):** <https://worktimelog-nine.vercel.app> · หน้าดูฐานข้อมูล: <https://worktimelog-nine.vercel.app/database.html> · Swagger: <https://worktimelog-nine.vercel.app/swagger>
+
 | ส่วน | เทคโนโลยี |
 |---|---|
 | Backend | ASP.NET Core Web API (.NET 8) ภาษา C# |
@@ -92,6 +94,8 @@ WorkTimeLog/
 ├─ start-mobile.ps1                  ← รันเซิร์ฟเวอร์ + Cloudflare Tunnel
 ├─ Dockerfile, .dockerignore         ← สำหรับ deploy ด้วย Docker
 ├─ render.yaml                       ← Render Blueprint
+├─ Dockerfile.vercel, vercel.json    ← Vercel Container Runtime
+├─ .vercelignore                     ← ไฟล์ที่ไม่อัปโหลดขึ้น Vercel (*.db, bin, obj, tests)
 └─ README.md
 ```
 
@@ -293,6 +297,71 @@ powershell -ExecutionPolicy Bypass -File .\start-mobile.ps1
 - Swagger เปิดทุก environment: `https://<ชื่อแอป>.onrender.com/swagger`
 - ถ้าตั้ง `ConnectionStrings__Default` ข้อมูลอยู่บน Neon **ไม่หายเมื่อรีสตาร์ต** ถ้าไม่ตั้ง จะใช้ SQLite ในเครื่อง Render ซึ่งรีเซ็ตทุกครั้งที่ deploy / รีสตาร์ต
 - อัปเดต: แก้โค้ด → `git add -A` → `git commit -m "..."` → `git push` → Render build และ deploy ให้อัตโนมัติ
+
+### 4.6 Deploy ขึ้น Vercel (Container Runtime, แผน Hobby)
+
+Demo: **<https://worktimelog-nine.vercel.app>** — อ้างอิง [คู่มือ ASP.NET Core on Vercel with Docker](https://vercel.com/kb/guide/dot-net-asp-net-on-vercel-with-docker)
+
+ไฟล์ที่เกี่ยวข้อง
+
+| ไฟล์ | หน้าที่ |
+|---|---|
+| `Dockerfile.vercel` | multi-stage: `dotnet/sdk:8.0` publish → `dotnet/aspnet:8.0` รัน (Vercel เลือกไฟล์นี้ก่อน `Dockerfile` ของ Render) |
+| `vercel.json` | service `worktimelog` ใช้ `Dockerfile.vercel` และส่งทุก path ไปที่ container |
+| `.vercelignore` | ไม่อัปโหลด `*.db`, bin/obj, tests, logs |
+
+ค่าที่ตั้งไว้ใน image: `PORT=80`, `ASPNETCORE_HTTP_PORTS=80` (image .NET 8 ตั้ง 8080 ไว้ ถ้าไม่แก้จะได้ 502), `ASPNETCORE_ENVIRONMENT=Production`, `DB_PROVIDER=postgres`
+
+Environment Variables บน Vercel (Project → Settings → Environment Variables)
+
+| Name | Environment | ชนิด | ค่า |
+|---|---|---|---|
+| `DB_PROVIDER` | Production, Preview | Config | `postgres` |
+| `ConnectionStrings__Default` | Production | **Sensitive** | connection string ของ Neon (ห้ามใส่ในไฟล์) |
+
+ขั้นตอน (PowerShell — ถ้า PowerShell บล็อก `vercel.ps1` ให้ใช้ `vercel.cmd`)
+
+```powershell
+npm install -g vercel
+vercel.cmd login                                    # เลือก Continue with GitHub
+cd C:\dev\WorkTimeLog
+vercel.cmd link --yes --project worktimelog --scope folktalomlok
+vercel.cmd env add DB_PROVIDER --environment production,preview --value postgres --no-sensitive --yes
+
+# connection string: พิมพ์/วางเอง ไม่เก็บลงไฟล์
+$cs = Read-Host "วาง connection string ของ Neon"
+$cs | vercel.cmd env add ConnectionStrings__Default --environment production --sensitive --yes
+Remove-Variable cs
+
+vercel.cmd --prod                                   # deploy production
+```
+
+พฤติกรรมบน Vercel
+
+- **บังคับ PostgreSQL**: ถ้าไม่มี `ConnectionStrings__Default` แอปไม่ fallback ไป SQLite แต่ตอบ **503** พร้อมข้อความ `ระบบยังตั้งค่าฐานข้อมูลไม่ครบ: ...` (หน้าเว็บยังเปิดได้)
+- `GET /health` → `{"status":"ok","database":"Postgres",...}` ไม่แตะฐานข้อมูล (เร็ว)
+- รับ `X-Forwarded-For` / `X-Forwarded-Proto` จาก proxy ของ Vercel และไม่ใช้ HTTPS redirection (Vercel ทำ HTTPS ให้แล้ว)
+- ตอนเริ่ม container: ถามแค่ว่ามี migration ค้างไหม (1 query) — ถ้าไม่มีจะข้าม `Migrate()` / seed เฉพาะเมื่อตารางว่าง · ตั้ง `DB_INIT=skip` เพื่อข้ามทั้งหมดได้
+- ดู log: `vercel.cmd logs worktimelog-nine.vercel.app` หรือ Dashboard → Deployments → Logs
+
+อัปเดตครั้งหน้า
+
+- ตอนนี้ deploy ด้วย CLI: แก้โค้ด → `vercel.cmd --prod`
+- ถ้าอยากให้ deploy อัตโนมัติเมื่อ `git push`: Vercel Dashboard → Project → Settings → **Git** → Connect `Folktalomlok/WorkTimeLog`
+  (ถ้าหา repo ไม่เจอ ให้ไปที่ GitHub → Settings → Applications → **Vercel** → Configure → Repository access → เพิ่ม `WorkTimeLog` เพราะ repo เป็น private)
+
+ข้อจำกัดของแผน Hobby / Container Runtime
+
+- Container Runtime ยังเป็น **Beta** (ใช้ได้ทุกแผน)
+- **Scale to zero**: ตามเอกสาร container จะถูกปิดเมื่อไม่มีคนใช้ 5 นาที (production) request แรกหลังจากนั้นจะช้ากว่าปกติ (cold start) และ Neon เองก็พัก compute เมื่อว่างเช่นกัน
+  เวลาที่วัดได้ (2026-11-18, จากไทย): `/health` 0.56–1.19 วินาที · `/api/projects` ตอน Neon เพิ่งตื่น **2.16 วินาที** → ครั้งถัดไป 0.62 วินาที ·
+  ตอนเปิดแอปบนเครื่อง ส่วนเตรียมฐานข้อมูลใช้ ~2.1 วินาที (ส่วนใหญ่คือการต่อ Neon ครั้งแรก)
+- **ไม่มี disk ถาวร** — ข้อมูลทั้งหมดอยู่บน Neon (เหมาะกับแอปนี้อยู่แล้ว)
+- request/response body ไม่เกินประมาณ 4.5 MB
+- งาน background (`BackgroundService`, timer) ไม่ทำงานต่อเนื่องระหว่าง request
+- แผน Hobby ใช้ได้เฉพาะงานส่วนตัว/ไม่ใช่เชิงพาณิชย์ และมีโควตาการใช้งานรายเดือน (Active CPU, memory, invocations) ถ้าเกินโควตา Vercel จะหยุดให้บริการจนรอบถัดไป ไม่คิดเงินเพิ่ม
+- Hobby เปิด **Vercel Authentication** กับ URL ของแต่ละ deployment (`worktimelog-xxxx-folktalomlok.vercel.app`) โดยค่าเริ่มต้น — ให้ใช้ URL production `worktimelog-nine.vercel.app` ซึ่งเปิดสาธารณะ
+- ⚠️ แอปไม่มี login: ใครมีลิงก์ก็เพิ่ม/แก้ไข/ดูข้อมูลได้
 
 ---
 

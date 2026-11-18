@@ -1,0 +1,32 @@
+# Dockerfile สำหรับ Vercel Container Runtime
+# (Vercel เลือกไฟล์ Dockerfile.vercel ก่อน Dockerfile ปกติ ซึ่งใช้กับ Render)
+# อ้างอิง: https://vercel.com/kb/guide/dot-net-asp-net-on-vercel-with-docker
+
+# ---------- Build stage ----------
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+
+# restore ก่อน เพื่อให้ cache layer นี้ไว้ได้เมื่อแก้แค่โค้ด
+COPY src/WorkTimeLog.Api/WorkTimeLog.Api.csproj src/WorkTimeLog.Api/
+RUN dotnet restore src/WorkTimeLog.Api/WorkTimeLog.Api.csproj
+
+COPY src/WorkTimeLog.Api/ src/WorkTimeLog.Api/
+RUN dotnet publish src/WorkTimeLog.Api/WorkTimeLog.Api.csproj -c Release --no-restore -o /app/publish /p:UseAppHost=false
+
+# ---------- Runtime stage ----------
+FROM mcr.microsoft.com/dotnet/aspnet:8.0
+WORKDIR /app
+COPY --from=build /app/publish ./
+
+# - PORT / ASPNETCORE_HTTP_PORTS ตรงกัน (Vercel ส่ง traffic มาที่พอร์ต 80)
+#   image .NET 8 ตั้ง ASPNETCORE_HTTP_PORTS=8080 ไว้ ถ้าไม่แก้จะได้ 502
+# - DB_PROVIDER=postgres: บน Vercel ไม่มี disk ถาวร ห้าม fallback ไป SQLite
+#   (ถ้าไม่มี ConnectionStrings__Default แอปจะตอบ 503 พร้อมข้อความ)
+# - ConnectionStrings__Default ตั้งใน Vercel Environment Variables เท่านั้น ห้ามใส่ใน image
+ENV PORT=80 \
+    ASPNETCORE_HTTP_PORTS=80 \
+    ASPNETCORE_ENVIRONMENT=Production \
+    DB_PROVIDER=postgres \
+    DOTNET_EnableDiagnostics=0
+
+ENTRYPOINT ["dotnet", "WorkTimeLog.Api.dll"]
