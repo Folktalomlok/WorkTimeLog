@@ -76,6 +76,8 @@ public class DatabaseServiceTests : IDisposable
         var info = await _service.GetInfoAsync();
 
         Assert.Equal("SQLite", info.DatabaseType);
+        Assert.False(info.CanDownloadFile); // in-memory ไม่มีไฟล์ให้ดาวน์โหลด
+        Assert.Null(info.Host);
         Assert.Equal(3, info.ProjectCount);
         Assert.Equal(5, info.EntryCount);
         Assert.Equal(1, info.CancelledCount);

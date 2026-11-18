@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #pragma warning disable CA1814 // Prefer jagged arrays over multidimensional
 
-namespace WorkTimeLog.Api.Data.Migrations
+namespace WorkTimeLog.Api.Data.Migrations.Sqlite
 {
     /// <inheritdoc />
     public partial class InitialCreate : Migration

@@ -54,8 +54,8 @@ public class DatabaseController : ControllerBase
     [Produces("application/octet-stream")]
     public async Task<IActionResult> Download()
     {
-        if (_service.DataSource is "" or ":memory:")
-            throw new BusinessRuleException("ฐานข้อมูลนี้อยู่ในหน่วยความจำ ไม่มีไฟล์ให้ดาวน์โหลด");
+        if (!_service.CanDownloadFile)
+            throw new BusinessRuleException("ดาวน์โหลดไฟล์ .db ได้เฉพาะเมื่อใช้ SQLite — ฐานข้อมูล PostgreSQL ให้ใช้ปุ่มส่งออก CSV แทน");
 
         var temp = await _service.CreateDatabaseCopyAsync();
         _logger.LogInformation("Database copy created for download: {Temp}", temp);

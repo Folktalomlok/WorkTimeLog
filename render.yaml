@@ -15,3 +15,6 @@ services:
       - key: DB_PATH
         value: /app/data/worklog.db
       # PORT ไม่ต้องตั้ง — Render กำหนดให้เอง (ค่าเริ่มต้น 10000)
+      # connection string ของ Neon — sync: false = Render จะให้กรอกค่าเองใน Dashboard (ไม่เก็บในไฟล์นี้)
+      - key: ConnectionStrings__Default
+        sync: false

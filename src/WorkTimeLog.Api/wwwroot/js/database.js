@@ -62,8 +62,18 @@ function renderInfo() {
   $('cMinutes').textContent = `${num(i.totalMinutes)} นาที`;
   $('cHours').textContent = fmtDuration(i.totalMinutes) + ' (ไม่นับที่ยกเลิก)';
   $('cCancelled').textContent = num(i.cancelledCount);
-  $('cPath').textContent = i.filePath;
-  $('cSize').textContent = fmtBytes(i.fileSizeBytes) + (i.walSizeBytes ? ` (+ WAL ${fmtBytes(i.walSizeBytes)})` : '');
+  const isPg = i.databaseType === 'PostgreSQL';
+  $('cHost').textContent = i.host ?? '';
+  $('cDbName').textContent = i.databaseName ?? '';
+  $('cPath').textContent = i.filePath ?? '';
+  $('rowHost').classList.toggle('d-none', !isPg);
+  $('rowDbName').classList.toggle('d-none', !isPg);
+  $('rowPath').classList.toggle('d-none', isPg);
+  $('cSizeLabel').textContent = isPg ? 'ขนาดฐานข้อมูล' : 'ขนาดไฟล์';
+  $('cSize').textContent = fmtBytes(i.sizeBytes) + (i.walSizeBytes ? ` (+ WAL ${fmtBytes(i.walSizeBytes)})` : '');
+  if (isPg && i.host) $('cVersion').textContent += ` · ${i.host}`;
+  // ปุ่มดาวน์โหลดไฟล์ .db มีเฉพาะ SQLite — PostgreSQL ใช้ CSV แทน
+  $('dbDownloadBtn').classList.toggle('d-none', !i.canDownloadFile);
   $('cTables').textContent = i.tables.map((t) => `${t.name} = ${num(t.rows)}`).join(', ');
   $('updatedAt').textContent = `อัปเดตล่าสุด ${new Date().toLocaleTimeString('th-TH')}`;
 }

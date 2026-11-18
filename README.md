@@ -6,10 +6,59 @@
 | ส่วน | เทคโนโลยี |
 |---|---|
 | Backend | ASP.NET Core Web API (.NET 8) ภาษา C# |
-| Database | SQLite + Entity Framework Core 8 (Code-First + Migrations) ไฟล์ `worklog.db` |
+| Database | **PostgreSQL บน Neon** (หลัก) หรือ SQLite `worklog.db` (สำรอง / ใช้งานออฟไลน์) + Entity Framework Core 8 (Code-First + Migrations) |
 | Frontend | HTML + CSS + JavaScript (fetch API) + Bootstrap 5 (mobile-first) อยู่ใน `wwwroot` |
 | API Docs | Swagger (Swashbuckle) |
 | Test | xUnit + SQLite in-memory |
+
+## สถาปัตยกรรม
+
+แยกเซิร์ฟเวอร์ฐานข้อมูลออกจากตัวแอป: ตัวแอปจะรันที่ไหนก็ได้ (เครื่องตัวเอง / Codespaces / Render) แล้วต่อมาที่ฐานข้อมูลเดียวกันบน Neon
+
+```mermaid
+flowchart LR
+    subgraph Client["ผู้ใช้"]
+        M["มือถือ / เบราว์เซอร์<br/>index.html · database.html<br/>(Bootstrap 5 + fetch API)"]
+    end
+    subgraph App["ASP.NET Core 8 Web API<br/>(เครื่องตัวเอง / Codespaces / Render)"]
+        C["Controllers<br/>/api/entries · /api/projects<br/>/api/summary · /api/database"]
+        S["Services<br/>TimeEntryService (กติกา 480 นาที)<br/>SummaryService · DatabaseService"]
+        E["EF Core 8<br/>AppDbContext"]
+        C --> S --> E
+    end
+    subgraph DB["ฐานข้อมูล"]
+        PG[("PostgreSQL<br/>Neon · Singapore<br/>database: neondb")]
+        SQ[("SQLite<br/>worklog.db<br/>(สำรอง)")]
+    end
+    M -- "HTTPS / HTTP (JSON)" --> C
+    E -- "Npgsql · TLS (SSL Mode=VerifyFull)" --> PG
+    E -. "เมื่อไม่มี connection string<br/>หรือ DB_PROVIDER=sqlite" .-> SQ
+```
+
+### การเลือกฐานข้อมูล
+
+| เงื่อนไข | ฐานข้อมูลที่ใช้ |
+|---|---|
+| `DB_PROVIDER=postgres` | PostgreSQL (ต้องมี `ConnectionStrings:Default`) |
+| `DB_PROVIDER=sqlite` | SQLite (`DB_PATH` หรือ `worklog.db`) |
+| ไม่ได้ตั้ง `DB_PROVIDER` และ **มี** `ConnectionStrings:Default` | PostgreSQL |
+| ไม่ได้ตั้ง `DB_PROVIDER` และ **ไม่มี** `ConnectionStrings:Default` | SQLite |
+
+`ConnectionStrings:Default` อ่านจาก **dotnet user-secrets** (บนเครื่อง) หรือ environment variable **`ConnectionStrings__Default`** (Codespaces / Render)
+**ไม่มี connection string หรือรหัสผ่านอยู่ในไฟล์ใด ๆ ของโปรเจกต์** และแอปไม่แสดงรหัสผ่านใน log / หน้าเว็บ (แสดงแค่ host กับชื่อ database)
+
+### ทำไม migrations แยก 2 ชุด
+
+EF Core migration ผูกกับ provider: ชนิดคอลัมน์ (`TEXT`/`INTEGER` ของ SQLite กับ `date`/`boolean`/`timestamptz` ของ PostgreSQL), identity, collation ต่างกัน จึงใช้ DbContext ลูก 2 ตัวที่ใช้ model เดียวกันจาก `AppDbContext`
+
+| DbContext | Migrations | ใช้เมื่อ |
+|---|---|---|
+| `SqliteAppDbContext` | `Data/Migrations/Sqlite` | SQLite (migration เดิม ID เดิม → ไฟล์ `worklog.db` เก่ายังใช้ต่อได้) |
+| `PostgresAppDbContext` | `Data/Migrations/Postgres` | PostgreSQL / Neon |
+
+Service ทุกตัวใช้ `AppDbContext` จึงไม่ต้องรู้ว่าใช้ฐานข้อมูลอะไร ส่วน seed data ย้ายมาใส่ตอนเริ่มแอป (`DbSeeder`) **เฉพาะเมื่อตารางว่าง** แทนการเขียนไว้ใน migration เพื่อไม่ให้ชนกับข้อมูลที่ย้ายมา
+
+ความต่างที่จัดการไว้: ชื่อโครงการห้ามซ้ำแบบไม่สนตัวพิมพ์ — SQLite ใช้ `COLLATE NOCASE`, PostgreSQL ใช้ ICU collation `case_insensitive` (nondeterministic) · `DateOnly` → `date` · `bool` → `boolean` · `DateTime` → `timestamptz` (UTC) · CHECK `Minutes 1–480` และ index ของ `WorkDate` เหมือนกันทั้งสองแบบ
 
 ---
 
@@ -22,8 +71,9 @@ WorkTimeLog/
 ├─ .vscode/                          ← tasks / launch สำหรับ VS Code
 ├─ src/WorkTimeLog.Api/
 │  ├─ Models/            Project.cs, TimeEntry.cs              (Entity)
-│  ├─ Data/              AppDbContext.cs (+ seed data)
-│  │  └─ Migrations/     InitialCreate
+│  ├─ Data/              AppDbContext.cs (+ SqliteAppDbContext, PostgresAppDbContext)
+│  │                     DatabaseSetup.cs (เลือก provider), DbSeeder.cs, SqliteToPostgresImporter.cs
+│  │  └─ Migrations/     Sqlite/InitialCreate, Postgres/InitialCreate
 │  ├─ Dtos/              Dtos.cs                               (DTO แยกจาก Entity)
 │  ├─ Services/          TimeEntryService.cs  ← กติกาทางธุรกิจทั้งหมด
 │  │                     SummaryService.cs, ProjectService.cs, Exceptions.cs
@@ -37,6 +87,7 @@ WorkTimeLog/
 │  ├─ TimeEntryServiceTests.cs
 │  └─ SummaryAndProjectTests.cs
 ├─ database/schema.sql               ← CREATE TABLE (SQLite) + seed
+├─ database/schema.postgres.sql      ← สร้างจาก migration (dotnet ef migrations script)
 ├─ docs/ER-diagram.md                ← Mermaid erDiagram
 ├─ start-mobile.ps1                  ← รันเซิร์ฟเวอร์ + Cloudflare Tunnel
 ├─ Dockerfile, .dockerignore         ← สำหรับ deploy ด้วย Docker
@@ -64,6 +115,55 @@ WorkTimeLog/
    dotnet restore
    dotnet tool restore      # ติดตั้ง dotnet-ef ตามไฟล์ .config/dotnet-tools.json
    ```
+5. ตั้งค่าการเชื่อมต่อ PostgreSQL (Neon) — ข้ามได้ถ้าจะใช้ SQLite
+
+### 2.1 ตั้งค่า connection string บนเครื่องด้วย user-secrets
+
+user-secrets เก็บค่าไว้นอกโฟลเดอร์โปรเจกต์ (`%APPDATA%\Microsoft\UserSecrets\<UserSecretsId>\secrets.json`) จึงไม่หลุดเข้า git
+
+1. เข้า Neon Console → โปรเจกต์ → **Connect** → เลือก database `neondb`, role `neondb_owner` → เลือกรูปแบบ **.NET** แล้วกดคัดลอก
+2. รันใน terminal (แทน `<connection string>` ด้วยค่าที่คัดลอกมา ใส่ในเครื่องหมาย `"` ทั้งก้อน)
+   ```powershell
+   dotnet user-secrets set "ConnectionStrings:Default" "<connection string>" --project src/WorkTimeLog.Api
+   ```
+3. ตรวจว่ามี key แล้ว **โดยไม่แสดงค่า**: ดูบรรทัด `ฐานข้อมูล : Postgres: <host>/neondb` ตอน `dotnet run`
+   (อย่าใช้ `dotnet user-secrets list` ต่อหน้าคนอื่นหรือตอนแชร์หน้าจอ เพราะจะแสดงรหัสผ่าน)
+4. ลบค่า: `dotnet user-secrets remove "ConnectionStrings:Default" --project src/WorkTimeLog.Api`
+
+> user-secrets ใช้ได้เฉพาะ environment `Development` (ค่าเริ่มต้นของ `dotnet run`) ที่อื่นให้ใช้ environment variable `ConnectionStrings__Default`
+
+### 2.2 ตั้งค่าใน GitHub Codespaces (Codespaces secret)
+
+1. GitHub → รูปโปรไฟล์ → **Settings** → **Codespaces** (เมนูซ้าย หัวข้อ Code, planning, and automation)
+2. หัวข้อ **Secrets** → **New secret**
+3. **Name**: `ConnectionStrings__Default` (ขีดล่าง 2 ตัว) · **Value**: connection string จาก Neon
+4. **Repository access** → เลือก repo `WorkTimeLog` → **Add secret**
+5. Codespace ที่เปิดอยู่ต้อง **รีสตาร์ต** ถึงจะเห็น secret ใหม่ (Codespaces จะแจ้งให้ Reload) หรือ `Ctrl+Shift+P` → *Codespaces: Rebuild Container*
+6. ตรวจใน terminal ของ Codespace **โดยไม่แสดงค่า**:
+   ```bash
+   [ -n "$ConnectionStrings__Default" ] && echo "มี secret แล้ว" || echo "ยังไม่มี"
+   ```
+
+### 2.3 ย้ายข้อมูลจาก SQLite เข้า PostgreSQL
+
+```powershell
+dotnet run --project src/WorkTimeLog.Api -- import-sqlite                 # ใช้ src/WorkTimeLog.Api/worklog.db
+dotnet run --project src/WorkTimeLog.Api -- import-sqlite path\to\other.db # หรือระบุไฟล์เอง
+```
+
+- รัน migration กับ PostgreSQL ให้ก่อน แล้วคัดลอก Projects และ TimeEntries **โดยคง Id เดิม** และรีเซ็ต identity sequence ให้ต่อจาก Id มากสุด
+- **รันซ้ำได้**: แถวที่มี Id อยู่แล้วจะถูกข้าม ข้อมูลไม่ซ้ำ
+- แสดงจำนวนแถวก่อน/หลังย้าย และเวลารวม เพื่อเทียบว่าตรงกัน
+- ควรย้าย **ก่อน** รันแอปกับฐานข้อมูลใหม่ครั้งแรก (ถ้ารันแอปก่อน ตารางว่างจะถูกใส่ข้อมูลตัวอย่าง แล้ว Id 1–5 จะชนกับข้อมูลเดิม)
+- ถ้าต่อ Neon แล้วขึ้น `Timeout during reading attempt` ให้ตรวจว่า VPN / firewall ไม่ได้บล็อกพอร์ต **5432**
+
+> สร้าง migration ใหม่ในอนาคต (ต้องทำทั้ง 2 ชุด):
+> ```powershell
+> dotnet ef migrations add <Name> --project src/WorkTimeLog.Api --context SqliteAppDbContext   -o Data/Migrations/Sqlite
+> dotnet ef migrations add <Name> --project src/WorkTimeLog.Api --context PostgresAppDbContext -o Data/Migrations/Postgres
+> dotnet ef migrations script --project src/WorkTimeLog.Api --context PostgresAppDbContext -o database/schema.postgres.sql
+> ```
+> ไม่ต้องใช้ `dotnet ef database update` — แอปรัน `Migrate()` ให้เองตอนเริ่ม
 
 > คำสั่งที่ใช้สร้างโปรเจกต์นี้ตั้งแต่ต้น (อ้างอิง)
 > ```powershell
@@ -185,12 +285,13 @@ powershell -ExecutionPolicy Bypass -File .\start-mobile.ps1
 | Environment variable | ค่าบน Render | ความหมาย |
 |---|---|---|
 | `PORT` | Render ตั้งให้เอง (ปกติ 10000) | พอร์ตที่แอปฟัง (ไม่มีค่า → 5000) |
-| `DB_PATH` | `/app/data/worklog.db` | path ไฟล์ SQLite (ไม่มีค่า → `worklog.db` ในโฟลเดอร์โปรเจกต์) |
+| `ConnectionStrings__Default` | connection string จาก Neon (ตั้งใน Render Dashboard → Environment ห้ามใส่ใน render.yaml) | ใช้ PostgreSQL บน Neon |
+| `DB_PATH` | `/app/data/worklog.db` | path ไฟล์ SQLite (ใช้เมื่อไม่มี connection string) |
 | `ASPNETCORE_ENVIRONMENT` | `Production` | |
 
-- ตอนเริ่มทำงาน แอปรัน `Database.Migrate()` และใส่ข้อมูลตัวอย่างให้อัตโนมัติ
+- ตอนเริ่มทำงาน แอปรัน `Database.Migrate()` และใส่ข้อมูลตัวอย่างเฉพาะเมื่อตารางว่าง
 - Swagger เปิดทุก environment: `https://<ชื่อแอป>.onrender.com/swagger`
-- แผนฟรีไม่มี disk ถาวร → **ข้อมูลรีเซ็ตกลับเป็นข้อมูลตัวอย่างทุกครั้งที่ deploy / รีสตาร์ต / เครื่องหลับ**
+- ถ้าตั้ง `ConnectionStrings__Default` ข้อมูลอยู่บน Neon **ไม่หายเมื่อรีสตาร์ต** ถ้าไม่ตั้ง จะใช้ SQLite ในเครื่อง Render ซึ่งรีเซ็ตทุกครั้งที่ deploy / รีสตาร์ต
 - อัปเดต: แก้โค้ด → `git add -A` → `git commit -m "..."` → `git push` → Render build และ deploy ให้อัตโนมัติ
 
 ---

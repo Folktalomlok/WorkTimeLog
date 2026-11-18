@@ -4,7 +4,6 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using WorkTimeLog.Api.Data;
 using WorkTimeLog.Api.Dtos;
@@ -13,7 +12,9 @@ using WorkTimeLog.Api.Services;
 
 Console.OutputEncoding = Encoding.UTF8;
 
-var builder = WebApplication.CreateBuilder(args);
+// โหมดย้ายข้อมูล: dotnet run --project src/WorkTimeLog.Api -- import-sqlite [path ไฟล์ .db]
+var importMode = args.Length > 0 && args[0] == "import-sqlite";
+var builder = WebApplication.CreateBuilder(importMode ? Array.Empty<string>() : args);
 
 // ---------- Kestrel: ฟังที่ http://0.0.0.0:{PORT} ----------
 // Render (และ host อื่น ๆ) กำหนดพอร์ตผ่าน environment variable PORT ถ้าไม่มีใช้ 5000
@@ -23,19 +24,10 @@ var port = int.TryParse(Environment.GetEnvironmentVariable("PORT"), out var envP
 builder.WebHost.ConfigureKestrel(o => o.Listen(IPAddress.Any, port));
 // ไม่ใช้ UseHttpsRedirection: Render / Cloudflare ทำ HTTPS ที่ด้านหน้าแล้วส่งต่อมาเป็น HTTP
 
-// ---------- Database (SQLite) ----------
-// path อ่านจาก environment variable DB_PATH ถ้าไม่มีใช้ connection string เดิม (worklog.db ในโฟลเดอร์โปรเจกต์ API)
-var cs = new SqliteConnectionStringBuilder(
-    builder.Configuration.GetConnectionString("Default") ?? "Data Source=worklog.db");
-var dbPath = Environment.GetEnvironmentVariable("DB_PATH");
-if (!string.IsNullOrWhiteSpace(dbPath))
-    cs.DataSource = dbPath;
-if (!Path.IsPathRooted(cs.DataSource))
-    cs.DataSource = Path.Combine(builder.Environment.ContentRootPath, cs.DataSource);
-var dbDir = Path.GetDirectoryName(cs.DataSource);
-if (!string.IsNullOrEmpty(dbDir))
-    Directory.CreateDirectory(dbDir);
-builder.Services.AddDbContext<AppDbContext>(o => o.UseSqlite(cs.ToString()));
+// ---------- Database: PostgreSQL (Neon) หรือ SQLite ----------
+// ดู DatabaseSetup.Resolve: DB_PROVIDER / ConnectionStrings:Default (user-secrets หรือ env ConnectionStrings__Default) / DB_PATH
+var dbSettings = DatabaseSetup.Resolve(builder.Configuration, builder.Environment.ContentRootPath);
+builder.Services.AddAppDatabase(dbSettings);
 
 // ---------- Services ----------
 builder.Services.AddScoped<TimeEntryService>();
@@ -77,10 +69,23 @@ builder.Services.AddCors(o => o.AddPolicy("DevCors", p => p.AllowAnyOrigin().All
 
 var app = builder.Build();
 
-// ---------- รัน migration อัตโนมัติตอนเริ่มแอป ----------
+if (importMode)
+{
+    var source = args.Length > 1 ? Path.GetFullPath(args[1]) : Path.Combine(app.Environment.ContentRootPath, "worklog.db");
+    Console.WriteLine($"ย้ายข้อมูล: {source}  →  {dbSettings}");
+    using var importScope = app.Services.CreateScope();
+    Environment.ExitCode = await SqliteToPostgresImporter.RunAsync(
+        importScope.ServiceProvider.GetRequiredService<AppDbContext>(), source, Console.Out);
+    return;
+}
+
+// ---------- รัน migration อัตโนมัติ และใส่ seed data เฉพาะเมื่อตารางว่าง ----------
 using (var scope = app.Services.CreateScope())
 {
-    scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.Migrate();
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    await db.Database.MigrateAsync();
+    if (await DbSeeder.SeedIfEmptyAsync(db))
+        app.Logger.LogInformation("ใส่ข้อมูลตัวอย่างแล้ว (ตารางว่าง)");
 }
 
 if (app.Environment.IsDevelopment())
@@ -100,7 +105,7 @@ app.Lifetime.ApplicationStarted.Register(() =>
     Console.WriteLine();
     Console.WriteLine("==============================================");
     Console.WriteLine(" ระบบบันทึกเวลาปฏิบัติงาน พร้อมใช้งาน");
-    Console.WriteLine($"  ฐานข้อมูล    : {cs.DataSource}");
+    Console.WriteLine($"  ฐานข้อมูล    : {dbSettings}"); // ไม่มีรหัสผ่าน
     Console.WriteLine($"  บนเครื่องนี้ : http://localhost:{port}");
     Console.WriteLine($"  Swagger      : http://localhost:{port}/swagger");
     foreach (var ip in GetLanAddresses())

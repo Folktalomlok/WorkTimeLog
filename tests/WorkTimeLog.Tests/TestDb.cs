@@ -19,7 +19,8 @@ public sealed class TestDb : IDisposable
         _connection.Open();
         var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options;
         Context = new AppDbContext(options);
-        Context.Database.EnsureCreated(); // รวม seed data (Projects Id 1–3)
+        Context.Database.EnsureCreated();
+        DbSeeder.SeedIfEmptyAsync(Context).GetAwaiter().GetResult(); // seed data (Projects Id 1–3, TimeEntries Id 1–5)
     }
 
     public void Dispose()

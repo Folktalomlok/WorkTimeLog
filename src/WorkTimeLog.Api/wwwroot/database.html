@@ -30,7 +30,8 @@
     <div class="d-flex flex-wrap gap-2 mb-3">
       <button class="btn btn-primary" id="refreshBtn"><i class="bi bi-arrow-clockwise me-1"></i>รีเฟรช</button>
       <a class="btn btn-outline-success" href="api/database/export/entries.csv" download><i class="bi bi-filetype-csv me-1"></i>ดาวน์โหลด CSV</a>
-      <a class="btn btn-outline-secondary" href="api/database/download" download><i class="bi bi-file-earmark-arrow-down me-1"></i>ดาวน์โหลดไฟล์ .db</a>
+      <!-- แสดงเฉพาะเมื่อใช้ SQLite (database.js เปิดให้ตาม canDownloadFile) -->
+      <a class="btn btn-outline-secondary d-none" id="dbDownloadBtn" href="api/database/download" download><i class="bi bi-file-earmark-arrow-down me-1"></i>ดาวน์โหลดไฟล์ .db</a>
       <span class="ms-auto small text-body-secondary align-self-center" id="updatedAt"></span>
     </div>
 
@@ -40,7 +41,7 @@
         <div class="stat-tile h-100">
           <div class="small text-body-secondary"><i class="bi bi-hdd me-1"></i>ชนิดฐานข้อมูล</div>
           <div class="fs-5 fw-bold" id="cType">–</div>
-          <div class="small text-body-secondary" id="cVersion"></div>
+          <div class="small text-body-secondary text-break" id="cVersion"></div>
         </div>
       </div>
       <div class="col-6 col-md">
@@ -71,9 +72,11 @@
       </div>
     </div>
     <details class="small text-body-secondary mb-3">
-      <summary>รายละเอียดไฟล์ฐานข้อมูล</summary>
-      <div class="mt-1">Path: <code id="cPath" class="text-break"></code></div>
-      <div>ขนาดไฟล์: <span id="cSize"></span></div>
+      <summary>รายละเอียดการเชื่อมต่อฐานข้อมูล</summary>
+      <div class="mt-1" id="rowHost">Host: <code id="cHost" class="text-break"></code></div>
+      <div id="rowDbName">Database: <code id="cDbName"></code></div>
+      <div id="rowPath">Path: <code id="cPath" class="text-break"></code></div>
+      <div><span id="cSizeLabel">ขนาดไฟล์</span>: <span id="cSize"></span></div>
       <div>จำนวนแถวแต่ละตาราง: <span id="cTables"></span></div>
     </details>
 

@@ -3,15 +3,36 @@ using WorkTimeLog.Api.Models;
 
 namespace WorkTimeLog.Api.Data;
 
+/// <summary>
+/// DbContext หลักที่ service ทุกตัวใช้ (ไม่ผูกกับ provider)
+/// ตัวที่ใช้งานจริงคือ <see cref="SqliteAppDbContext"/> หรือ <see cref="PostgresAppDbContext"/>
+/// ซึ่งแยกกันเพื่อให้แต่ละ provider มีชุด EF Migrations ของตัวเอง
+/// </summary>
 public class AppDbContext : DbContext
 {
+    /// <summary>collation แบบไม่สนตัวพิมพ์เล็ก/ใหญ่ของ PostgreSQL (ICU, nondeterministic)</summary>
+    public const string PostgresCaseInsensitiveCollation = "case_insensitive";
+
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+
+    /// <summary>สำหรับ class ลูกที่ส่ง DbContextOptions ของตัวเองเข้ามา</summary>
+    protected AppDbContext(DbContextOptions options) : base(options) { }
 
     public DbSet<Project> Projects => Set<Project>();
     public DbSet<TimeEntry> TimeEntries => Set<TimeEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        var isPostgres = Database.IsNpgsql();
+
+        if (isPostgres)
+        {
+            // PostgreSQL ไม่มี NOCASE แบบ SQLite → สร้าง ICU collation ที่เทียบแบบไม่สนตัวพิมพ์
+            // (ใช้กับ unique index และการเทียบ == ได้)
+            modelBuilder.HasCollation(PostgresCaseInsensitiveCollation,
+                locale: "und-u-ks-level2", provider: "icu", deterministic: false);
+        }
+
         modelBuilder.Entity<Project>(p =>
         {
             p.ToTable("Projects");
@@ -19,22 +40,24 @@ public class AppDbContext : DbContext
             p.Property(x => x.Name)
                 .IsRequired()
                 .HasMaxLength(100)
-                .UseCollation("NOCASE"); // ชื่อซ้ำแบบไม่สนตัวพิมพ์เล็ก/ใหญ่
+                // ชื่อซ้ำแบบไม่สนตัวพิมพ์เล็ก/ใหญ่
+                .UseCollation(isPostgres ? PostgresCaseInsensitiveCollation : "NOCASE");
             p.HasIndex(x => x.Name).IsUnique();
-            p.Property(x => x.IsActive).HasDefaultValue(true).ValueGeneratedNever(); // DB default = 1 แต่ EF ส่งค่าเสมอ
+            p.Property(x => x.IsActive).HasDefaultValue(true).ValueGeneratedNever(); // DB default = true แต่ EF ส่งค่าเสมอ
         });
 
         modelBuilder.Entity<TimeEntry>(e =>
         {
+            // ใส่ชื่อคอลัมน์ในเครื่องหมาย " ใช้ได้ทั้ง SQLite และ PostgreSQL
             e.ToTable("TimeEntries", t =>
                 t.HasCheckConstraint("CK_TimeEntries_Minutes", "\"Minutes\" > 0 AND \"Minutes\" <= 480"));
             e.HasKey(x => x.Id);
-            e.Property(x => x.WorkDate).IsRequired();
+            e.Property(x => x.WorkDate).IsRequired();                 // SQLite: TEXT 'YYYY-MM-DD' / PostgreSQL: date
             e.Property(x => x.Description).IsRequired().HasMaxLength(500);
             e.Property(x => x.Minutes).IsRequired();
             e.Property(x => x.Note).HasMaxLength(500);
             e.Property(x => x.IsCancelled).HasDefaultValue(false).ValueGeneratedNever();
-            e.Property(x => x.CreatedAt).IsRequired();
+            e.Property(x => x.CreatedAt).IsRequired();                // PostgreSQL: timestamptz (ต้องเป็น UTC)
             e.Property(x => x.UpdatedAt).IsRequired();
             e.HasIndex(x => x.WorkDate);
             e.HasOne(x => x.Project)
@@ -43,26 +66,18 @@ public class AppDbContext : DbContext
                 .OnDelete(DeleteBehavior.Restrict);
         });
 
-        Seed(modelBuilder);
+        // หมายเหตุ: seed data ไม่ได้อยู่ใน model แล้ว — ใส่ตอนเริ่มแอปผ่าน DbSeeder เฉพาะเมื่อตารางว่าง
     }
+}
 
-    private static void Seed(ModelBuilder modelBuilder)
-    {
-        modelBuilder.Entity<Project>().HasData(
-            new Project { Id = 1, Name = "โครงงานคอมพิวเตอร์", IsActive = true },
-            new Project { Id = 2, Name = "ฝึกงาน / สหกิจศึกษา", IsActive = true },
-            new Project { Id = 3, Name = "ทบทวนบทเรียนและการบ้าน", IsActive = true });
+/// <summary>DbContext สำหรับ SQLite (migrations อยู่ใน Data/Migrations/Sqlite)</summary>
+public class SqliteAppDbContext : AppDbContext
+{
+    public SqliteAppDbContext(DbContextOptions<SqliteAppDbContext> options) : base(options) { }
+}
 
-        var d1 = new DateOnly(2026, 11, 17);
-        var d2 = new DateOnly(2026, 11, 18);
-        var t1 = new DateTime(2026, 11, 17, 9, 0, 0, DateTimeKind.Utc);
-        var t2 = new DateTime(2026, 11, 18, 9, 0, 0, DateTimeKind.Utc);
-
-        modelBuilder.Entity<TimeEntry>().HasData(
-            new TimeEntry { Id = 1, WorkDate = d1, ProjectId = 1, Description = "ออกแบบฐานข้อมูลและ ER Diagram", Minutes = 120, CreatedAt = t1, UpdatedAt = t1 },
-            new TimeEntry { Id = 2, WorkDate = d1, ProjectId = 2, Description = "ประชุมทีมประจำสัปดาห์", Minutes = 60, Note = "ประชุมออนไลน์", CreatedAt = t1, UpdatedAt = t1 },
-            new TimeEntry { Id = 3, WorkDate = d1, ProjectId = 3, Description = "ทำแบบฝึกหัดคณิตศาสตร์", Minutes = 90, Note = "ตัวอย่างรายการที่ถูกยกเลิก", IsCancelled = true, CreatedAt = t1, UpdatedAt = t1 },
-            new TimeEntry { Id = 4, WorkDate = d2, ProjectId = 1, Description = "เขียน Web API ด้วย ASP.NET Core", Minutes = 180, CreatedAt = t2, UpdatedAt = t2 },
-            new TimeEntry { Id = 5, WorkDate = d2, ProjectId = 2, Description = "จัดทำเอกสารรายงานประจำวัน", Minutes = 90, Note = "รออาจารย์ตรวจ", CreatedAt = t2, UpdatedAt = t2 });
-    }
+/// <summary>DbContext สำหรับ PostgreSQL / Neon (migrations อยู่ใน Data/Migrations/Postgres)</summary>
+public class PostgresAppDbContext : AppDbContext
+{
+    public PostgresAppDbContext(DbContextOptions<PostgresAppDbContext> options) : base(options) { }
 }

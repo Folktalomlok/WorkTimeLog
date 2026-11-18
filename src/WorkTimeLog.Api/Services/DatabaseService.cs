@@ -1,7 +1,9 @@
 using System.Data;
 using System.Globalization;
 using System.Text;
+using System.Data.Common;
 using Microsoft.Data.Sqlite;
+using Npgsql;
 using Microsoft.EntityFrameworkCore;
 using WorkTimeLog.Api.Data;
 using WorkTimeLog.Api.Dtos;
@@ -18,31 +20,50 @@ public class DatabaseService
 
     public DatabaseService(AppDbContext db) => _db = db;
 
-    /// <summary>path ของไฟล์ฐานข้อมูล (":memory:" ถ้าเป็นฐานข้อมูลในหน่วยความจำ)</summary>
-    public string DataSource =>
-        new SqliteConnectionStringBuilder(_db.Database.GetConnectionString()).DataSource;
+    public bool IsSqlite => _db.Database.IsSqlite();
+    public bool IsPostgres => _db.Database.IsNpgsql();
+
+    /// <summary>path ของไฟล์ SQLite (null ถ้าไม่ใช่ SQLite, ":memory:" ถ้าอยู่ในหน่วยความจำ)</summary>
+    public string? SqliteFilePath =>
+        IsSqlite ? new SqliteConnectionStringBuilder(_db.Database.GetConnectionString()).DataSource : null;
+
+    /// <summary>ดาวน์โหลดไฟล์ .db ได้เฉพาะ SQLite ที่เป็นไฟล์จริง</summary>
+    public bool CanDownloadFile => SqliteFilePath is { Length: > 0 } p && p != ":memory:" && !p.StartsWith("file::memory:");
 
     public async Task<DatabaseInfoDto> GetInfoAsync()
     {
-        var conn = (SqliteConnection)_db.Database.GetDbConnection();
+        var conn = _db.Database.GetDbConnection();
         var opened = conn.State != ConnectionState.Open;
         if (opened) await conn.OpenAsync();
         string? version;
+        long sizeBytes = 0;
         var tables = new List<TableCountDto>();
         try
         {
-            version = await ScalarAsync<string>(conn, "SELECT sqlite_version();");
+            string tableListSql;
+            if (IsPostgres)
+            {
+                version = await ScalarAsync<string>(conn, "SELECT current_setting('server_version');");
+                sizeBytes = await ScalarAsync<long>(conn, "SELECT pg_database_size(current_database());");
+                tableListSql = "SELECT table_name FROM information_schema.tables " +
+                               "WHERE table_schema = current_schema() AND table_type = 'BASE TABLE' ORDER BY table_name;";
+            }
+            else
+            {
+                version = await ScalarAsync<string>(conn, "SELECT sqlite_version();");
+                tableListSql = "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name;";
+            }
 
             var names = new List<string>();
             await using (var cmd = conn.CreateCommand())
             {
-                cmd.CommandText = "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name;";
+                cmd.CommandText = tableListSql;
                 await using var r = await cmd.ExecuteReaderAsync();
                 while (await r.ReadAsync()) names.Add(r.GetString(0));
             }
             foreach (var name in names)
             {
-                // ชื่อตารางมาจาก sqlite_master เอง และ escape เครื่องหมาย " ไว้แล้ว
+                // ชื่อตารางมาจาก catalog ของฐานข้อมูลเอง และ escape เครื่องหมาย " ไว้แล้ว
                 var rows = await ScalarAsync<long>(conn, $"SELECT COUNT(*) FROM \"{name.Replace("\"", "\"\"")}\";");
                 tables.Add(new TableCountDto(name, rows));
             }
@@ -55,16 +76,35 @@ public class DatabaseService
         var entryCount = await _db.TimeEntries.CountAsync();
         var cancelled = await _db.TimeEntries.CountAsync(e => e.IsCancelled);
         var minutes = await _db.TimeEntries.Where(e => !e.IsCancelled).SumAsync(e => e.Minutes);
+        var projectCount = await _db.Projects.CountAsync();
 
-        var path = DataSource;
+        string? host = null, dbName = null, path = null;
+        long wal = 0;
+        if (IsPostgres)
+        {
+            // อ่านเฉพาะ Host / Database — ไม่แตะรหัสผ่าน
+            var b = new NpgsqlConnectionStringBuilder(_db.Database.GetConnectionString());
+            host = b.Host;
+            dbName = b.Database;
+        }
+        else
+        {
+            path = SqliteFilePath;
+            sizeBytes = FileSize(path!);
+            wal = FileSize(path + "-wal");
+        }
+
         return new DatabaseInfoDto(
-            "SQLite",
+            IsPostgres ? "PostgreSQL" : "SQLite",
             version,
+            host,
+            dbName,
             path,
-            FileSize(path),
-            FileSize(path + "-wal"),
+            sizeBytes,
+            wal,
+            CanDownloadFile,
             tables,
-            await _db.Projects.CountAsync(),
+            projectCount,
             entryCount,
             entryCount - cancelled,
             cancelled,
@@ -150,6 +190,8 @@ public class DatabaseService
     /// </summary>
     public async Task<string> CreateDatabaseCopyAsync()
     {
+        if (!CanDownloadFile)
+            throw new BusinessRuleException("ดาวน์โหลดไฟล์ได้เฉพาะเมื่อใช้ SQLite แบบไฟล์ — ฐานข้อมูล PostgreSQL ให้ใช้ปุ่มส่งออก CSV แทน");
         var conn = (SqliteConnection)_db.Database.GetDbConnection();
         var opened = conn.State != ConnectionState.Open;
         if (opened) await conn.OpenAsync();
@@ -181,7 +223,7 @@ public class DatabaseService
 
     // ---------------- helpers ----------------
 
-    private static async Task<T?> ScalarAsync<T>(SqliteConnection conn, string sql)
+    private static async Task<T?> ScalarAsync<T>(DbConnection conn, string sql)
     {
         await using var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
