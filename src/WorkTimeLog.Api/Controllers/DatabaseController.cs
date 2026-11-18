@@ -1,4 +1,6 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using WorkTimeLog.Api.Admin;
 using WorkTimeLog.Api.Dtos;
 using WorkTimeLog.Api.Services;
 
@@ -9,6 +11,7 @@ namespace WorkTimeLog.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/database")]
+[Authorize(Policy = AdminAuth.PolicyName)] // ทุก endpoint ต้องล็อกอินแอดมินก่อน (ไม่ล็อกอิน → 401)
 public class DatabaseController : ControllerBase
 {
     private readonly DatabaseService _service;

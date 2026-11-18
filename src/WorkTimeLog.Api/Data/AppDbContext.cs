@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using WorkTimeLog.Api.Models;
 
@@ -8,7 +9,7 @@ namespace WorkTimeLog.Api.Data;
 /// ตัวที่ใช้งานจริงคือ <see cref="SqliteAppDbContext"/> หรือ <see cref="PostgresAppDbContext"/>
 /// ซึ่งแยกกันเพื่อให้แต่ละ provider มีชุด EF Migrations ของตัวเอง
 /// </summary>
-public class AppDbContext : DbContext
+public class AppDbContext : DbContext, IDataProtectionKeyContext
 {
     /// <summary>collation แบบไม่สนตัวพิมพ์เล็ก/ใหญ่ของ PostgreSQL (ICU, nondeterministic)</summary>
     public const string PostgresCaseInsensitiveCollation = "case_insensitive";
@@ -20,6 +21,12 @@ public class AppDbContext : DbContext
 
     public DbSet<Project> Projects => Set<Project>();
     public DbSet<TimeEntry> TimeEntries => Set<TimeEntry>();
+
+    /// <summary>key ring ของ ASP.NET Core Data Protection (ใช้เข้ารหัส cookie ล็อกอินแอดมิน) — แชร์ทุก instance</summary>
+    public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
+
+    /// <summary>การลองรหัสแอดมินที่ผิด (rate limit ต่อ IP)</summary>
+    public DbSet<AdminLoginAttempt> AdminLoginAttempts => Set<AdminLoginAttempt>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -64,6 +71,15 @@ public class AppDbContext : DbContext
                 .WithMany(p => p.TimeEntries)
                 .HasForeignKey(x => x.ProjectId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<AdminLoginAttempt>(a =>
+        {
+            a.ToTable("AdminLoginAttempts");
+            a.HasKey(x => x.Id);
+            a.Property(x => x.IpAddress).IsRequired().HasMaxLength(64);
+            a.Property(x => x.AttemptedAt).IsRequired();
+            a.HasIndex(x => new { x.IpAddress, x.AttemptedAt });
         });
 
         // หมายเหตุ: seed data ไม่ได้อยู่ใน model แล้ว — ใส่ตอนเริ่มแอปผ่าน DbSeeder เฉพาะเมื่อตารางว่าง

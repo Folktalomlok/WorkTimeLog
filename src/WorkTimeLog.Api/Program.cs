@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Mvc;
+using WorkTimeLog.Api.Admin;
 using WorkTimeLog.Api.Data;
 using WorkTimeLog.Api.Dtos;
 using WorkTimeLog.Api.Filters;
@@ -49,6 +50,9 @@ try
     builder.Services.AddScoped<SummaryService>();
     builder.Services.AddScoped<ProjectService>();
     builder.Services.AddScoped<DatabaseService>();
+
+    // หน้าแอดมิน: Cookie Authentication + Data Protection key ในฐานข้อมูล (ดู Admin/AdminAuth.cs)
+    builder.Services.AddAdminAuth(withDatabase: true);
 }
 catch (InvalidOperationException ex)
 {
@@ -150,6 +154,13 @@ app.UseSwaggerUI(c => c.DocumentTitle = "Work Time Log API");
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
+
+// ---------- แอดมิน: ปิดทั้งหมด (503) ถ้าไม่มี ADMIN_PASSWORD → ตรวจ cookie → ตรวจสิทธิ์ ----------
+app.UseAdminGate();
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapAdmin();
+
 app.MapControllers();
 
 app.Lifetime.ApplicationStarted.Register(() =>

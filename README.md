@@ -3,7 +3,7 @@
 ระบบสำหรับนักศึกษา 1 คน ใช้บันทึกเวลาที่ใช้กับงาน/โครงการในแต่ละวัน จำกัดเวลารวมไม่เกิน **480 นาทีต่อวัน**
 ใช้งานได้ทั้งบนคอมพิวเตอร์และมือถือ (responsive)
 
-🔗 **Demo (Vercel):** <https://worktimelog-nine.vercel.app> · หน้าดูฐานข้อมูล: <https://worktimelog-nine.vercel.app/database.html> · Swagger: <https://worktimelog-nine.vercel.app/swagger>
+🔗 **Demo (Vercel):** <https://worktimelog-nine.vercel.app> · หน้าแอดมิน (ต้องใช้รหัส): <https://worktimelog-nine.vercel.app/admin> · Swagger: <https://worktimelog-nine.vercel.app/swagger>
 
 | ส่วน | เทคโนโลยี |
 |---|---|
@@ -20,7 +20,7 @@
 ```mermaid
 flowchart LR
     subgraph Client["ผู้ใช้"]
-        M["มือถือ / เบราว์เซอร์<br/>index.html · database.html<br/>(Bootstrap 5 + fetch API)"]
+        M["มือถือ / เบราว์เซอร์<br/>index.html (ทุกคน) · /admin (ต้องล็อกอิน)<br/>(Bootstrap 5 + fetch API)"]
     end
     subgraph App["ASP.NET Core 8 Web API<br/>(เครื่องตัวเอง / Codespaces / Render)"]
         C["Controllers<br/>/api/entries · /api/projects<br/>/api/summary · /api/database"]
@@ -400,7 +400,34 @@ Base URL: `http://localhost:5000` — ทดลองได้ที่ `/swagge
 | GET | `/api/summary/daily?date=YYYY-MM-DD` | เวลารวม, เวลาที่เหลือจาก 480, จำนวนรายการ |
 | GET | `/api/summary/by-project?from=...&to=...` | เวลารวมแยกตามโครงการ |
 
-### API ดูฐานข้อมูล (อ่านอย่างเดียว) — ใช้กับหน้า `/database.html`
+### หน้าแอดมิน (ต้องใส่รหัสผ่าน)
+
+| URL | คำอธิบาย |
+|---|---|
+| `/admin/login` | หน้าเข้าสู่ระบบ (ภาษาไทย ใช้บนมือถือได้) |
+| `/admin` | ดูฐานข้อมูล (เดิมคือ `/database.html` ซึ่งถูกลบออกจาก `wwwroot` แล้ว) |
+| `POST /api/admin/login` | body `{ "password": "..." }` → 200 + cookie · 401 รหัสผิด · 429 ลองผิดครบ 5 ครั้ง · 503 ไม่ได้ตั้งรหัส |
+| `POST /api/admin/logout` | ออกจากระบบ (ลบ cookie) |
+| `GET /api/admin/me` | `{ "authenticated": true/false }` |
+
+การทำงาน
+
+- รหัสผ่านอ่านจาก **`ADMIN_PASSWORD`** เท่านั้น (Vercel: Environment Variable ชนิด Secret · บนเครื่อง: `dotnet user-secrets set "ADMIN_PASSWORD" "<รหัส>" --project src/WorkTimeLog.Api` · Codespaces: secret ชื่อ `ADMIN_PASSWORD`) ไม่มีค่าเริ่มต้นในโค้ดหรือไฟล์ใด ๆ
+- **ไม่ได้ตั้ง `ADMIN_PASSWORD` → ปิดหน้าแอดมินทั้งหมด (503)** ทั้ง `/admin*`, `/api/admin/*`, `/api/database/*` — ไม่มีทางเข้าได้โดยไม่มีรหัส
+- เทียบรหัสแบบ constant-time: SHA-256 ทั้งสองฝั่งให้ยาวเท่ากัน แล้ว `CryptographicOperations.FixedTimeEquals`
+- ASP.NET Core **Cookie Authentication**: cookie `wtl_admin` เป็น `HttpOnly`, `Secure`, `SameSite=Strict`, อายุ **8 ชั่วโมง** (ไม่ต่ออายุอัตโนมัติ)
+- เปลี่ยน `ADMIN_PASSWORD` แล้ว cookie เดิมใช้ไม่ได้ทันที (ใน cookie มี fingerprint ของรหัสแบบ HMAC ตรวจทุก request)
+- **จำกัดรหัสผิด 5 ครั้งต่อ 15 นาทีต่อ IP** → ครั้งต่อไปได้ 429 + `Retry-After` (บันทึกในตาราง `AdminLoginAttempts` ล็อกอินสำเร็จแล้วล้างประวัติของ IP นั้น และลบบันทึกเก่าเกิน 1 วันอัตโนมัติ)
+- ไฟล์หน้าแอดมินอยู่ใน `src/WorkTimeLog.Api/AdminUi/` (ไม่ใช่ `wwwroot`) จึงไม่ถูกเสิร์ฟเป็น static file — ส่งผ่าน endpoint ที่ตรวจสิทธิ์ก่อน และตั้ง `Cache-Control: no-store`
+- Cookie เป็น `Secure` → ใช้ได้ผ่าน HTTPS (Vercel / Cloudflare Tunnel) หรือ `http://localhost` เท่านั้น ถ้าเปิดผ่าน `http://<IP เครื่อง>:5000` บนมือถือ จะล็อกอินแอดมินไม่ได้ (หน้าบันทึกเวลาใช้ได้ปกติ)
+
+**ทำไมต้องเก็บ Data Protection key ใน PostgreSQL**
+
+Cookie ล็อกอินถูกเข้ารหัสด้วย key ring ของ ASP.NET Core Data Protection ค่าเริ่มต้นจะสร้าง key ไว้ในหน่วยความจำ/ดิสก์ของเครื่องที่รันอยู่ แต่บน Vercel แอปรันหลาย instance พร้อมกัน และ instance ถูกปิด/เปิดใหม่ตลอด (scale to zero, ไม่มี disk ถาวร) — ถ้าแต่ละ instance มี key ของตัวเอง cookie ที่ออกจาก instance A จะถอดรหัสที่ instance B หรือหลังรีสตาร์ตไม่ได้ ผู้ใช้จะหลุดออกจากระบบเองแบบสุ่ม
+จึงใช้ `Microsoft.AspNetCore.DataProtection.EntityFrameworkCore` เก็บ key ในตาราง `DataProtectionKeys` (ฐานข้อมูลเดียวกัน) + `SetApplicationName("WorkTimeLog")` ทุก instance (รวมเครื่องตัวเอง/Codespaces ที่ต่อ Neon เดียวกัน) จึงใช้ key ชุดเดียวกัน
+หมายเหตุ: key ถูกเก็บแบบไม่เข้ารหัสซ้ำอีกชั้น (log จะเตือน `No XML encryptor configured`) — ผู้ที่เข้าถึงฐานข้อมูลได้ปลอม cookie ได้ แต่ก็อ่าน/แก้ข้อมูลทั้งหมดได้อยู่แล้ว จึงต้องเก็บ connection string ให้ปลอดภัย
+
+### API ดูฐานข้อมูล (อ่านอย่างเดียว, ต้องล็อกอินแอดมิน — ไม่ล็อกอินได้ 401) — ใช้กับหน้า `/admin`
 
 | Method | Endpoint | คำอธิบาย |
 |---|---|---|
@@ -411,7 +438,7 @@ Base URL: `http://localhost:5000` — ทดลองได้ที่ `/swagge
 | GET | `/api/database/export/entries.csv` | ดาวน์โหลด CSV (UTF-8 with BOM เปิดใน Excel แล้วภาษาไทยไม่เพี้ยน) |
 | GET | `/api/database/download` | ดาวน์โหลดสำเนา `worklog.db` (checkpoint WAL ก่อน แล้วส่งไฟล์สำเนาชั่วคราว) |
 
-> ⚠️ หน้านี้ไม่มี login ใครเปิดลิงก์ได้ก็ดาวน์โหลดฐานข้อมูลทั้งไฟล์ได้
+> หน้าบันทึกเวลา (`/`, `/api/entries`, `/api/projects`, `/api/summary`) ยังเปิดให้ทุกคนใช้ได้โดยไม่ต้องล็อกอินเหมือนเดิม
 
 ตัวอย่าง body ของ POST/PUT `/api/entries`
 
@@ -461,7 +488,8 @@ Base URL: `http://localhost:5000` — ทดลองได้ที่ `/swagge
 
 รันด้วย `dotnet test` — ใช้ **SQLite in-memory** (สร้างฐานข้อมูลใหม่ทุก test)
 
-**ผลการทดสอบ: ผ่าน 27 / 27 (Failed 0)** — ทดสอบเมื่อ 2026-11-18 บน .NET SDK 8.0.428
+**ผลการทดสอบ: ผ่าน 40 / 40 (Failed 0)** — ทดสอบเมื่อ 2026-11-18 บน .NET SDK 8.0.428
+(ข้อ 31–38 เป็น integration test ที่รันแอปจริงด้วย `WebApplicationFactory` + SQLite ไฟล์ชั่วคราว, environment `Testing` จึงไม่โหลด user-secrets และไม่แตะ Neon)
 
 | # | กรณีทดสอบ | ผลที่คาดหวัง | ผลลัพธ์ |
 |---|---|---|---|
@@ -490,8 +518,17 @@ Base URL: `http://localhost:5000` — ทดลองได้ที่ `/swagge
 | 23 | daily-totals แสดงสถานะเกิน 480 (ข้อมูล 500 นาที) | IsOverLimit = true | ✅ Passed |
 | 24 | info นับจำนวนแถวและเวลารวม (seed data) | 3 โครงการ, 5 รายการ, 450 นาที | ✅ Passed |
 | 25 | CSV มี BOM, escape `,` `"` และกันสูตร Excel | ถูกต้อง | ✅ Passed |
+| 26–30 | เลือก provider (SQLite/PostgreSQL), ไม่แสดงรหัสผ่าน, seed เฉพาะตอนตารางว่าง | ถูกต้อง | ✅ Passed |
+| 31 | ไม่ล็อกอิน → `/api/database/*` ทุกตัว | 401 | ✅ Passed |
+| 32 | รหัสผิด | 401 ไม่มี cookie และยังเข้าไม่ได้ | ✅ Passed |
+| 33 | รหัสถูก | 200 + cookie HttpOnly/Secure/SameSite=Strict อายุ 8 ชม. เข้า `/admin` ได้ | ✅ Passed |
+| 34 | ไม่ตั้ง `ADMIN_PASSWORD` | `/admin`, `/admin/login`, `/api/database/*`, login → 503 (หน้าหลักยังใช้ได้) | ✅ Passed |
+| 35 | รหัสผิด 5 ครั้ง แล้วลองรหัสถูก | 429 + Retry-After | ✅ Passed |
+| 36 | ออกจากระบบ | กลับมาได้ 401 | ✅ Passed |
+| 37 | เปิด `/admin` / `admin.js` โดยไม่ล็อกอิน | redirect ไป `/admin/login` | ✅ Passed |
+| 38 | หน้าหลัก | ไม่มีปุ่มดูฐานข้อมูล, `/database.html` = 404, API ผู้ใช้ทั่วไปใช้ได้ | ✅ Passed |
 
-ข้อ 1–8 คือกรณีที่โจทย์กำหนด ข้อ 9–20 เป็นกรณีเพิ่มเติม ข้อ 21–25 ทดสอบหน้าดูฐานข้อมูล
+ข้อ 1–8 คือกรณีที่โจทย์กำหนด ข้อ 9–20 เป็นกรณีเพิ่มเติม ข้อ 21–25 ทดสอบหน้าดูฐานข้อมูล ข้อ 31–38 ทดสอบหน้าแอดมิน
 
 ---
 

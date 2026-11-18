@@ -34,15 +34,25 @@ const num = (n) => Number(n).toLocaleString('th-TH');
 async function api(path) {
   let res;
   try {
-    res = await fetch('api/database/' + path, { headers: { Accept: 'application/json' } });
+    res = await fetch('/api/database/' + path, { headers: { Accept: 'application/json' } });
   } catch {
     throw new Error('ไม่สามารถติดต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบว่าเซิร์ฟเวอร์ยังทำงานอยู่');
   }
   const text = await res.text();
   let body = null;
   try { body = text ? JSON.parse(text) : null; } catch { /* not json */ }
+  if (res.status === 401) {
+    // หมดอายุ (8 ชั่วโมง) หรือออกจากระบบจากที่อื่น → กลับไปหน้า login
+    location.replace('/admin/login');
+    throw new Error('กรุณาเข้าสู่ระบบใหม่');
+  }
   if (!res.ok) throw new Error(body?.message || `เกิดข้อผิดพลาด (HTTP ${res.status})`);
   return body;
+}
+
+async function logout() {
+  try { await fetch('/api/admin/logout', { method: 'POST' }); } catch { /* ignore */ }
+  location.replace('/admin/login');
 }
 
 function showError(msg) {
@@ -181,6 +191,7 @@ async function loadAll() {
 
 document.addEventListener('DOMContentLoaded', () => {
   $('refreshBtn').addEventListener('click', loadAll);
+  $('logoutBtn').addEventListener('click', logout);
   ['fSearch', 'fFrom', 'fTo', 'fStatus'].forEach((id) => $(id).addEventListener('input', renderEntries));
   $('clearFilter').addEventListener('click', () => {
     $('fSearch').value = ''; $('fFrom').value = ''; $('fTo').value = ''; $('fStatus').value = 'all';
