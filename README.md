@@ -9,6 +9,7 @@
 - 🗄️ สคริปต์ฐานข้อมูล: [`database/submission/`](database/submission/) (PostgreSQL และ MySQL)
 - 📘 คู่มือการใช้งาน: [`docs/manual/`](docs/manual/) (PDF และ Word)
 - 🔒 หน้าผู้ดูแลระบบ (ดูฐานข้อมูล): <https://worktimelog-nine.vercel.app/admin> (ต้องใช้รหัสผ่าน ขอได้จากผู้จัดทำ)
+- pass admin_admin
 
 ## ลองทดสอบเงื่อนไขด้วยตัวเอง
 
