@@ -1,7 +1,96 @@
 # ระบบบันทึกเวลาปฏิบัติงาน (Work Time Log)
 
+ผู้จัดทำ: **นายกิตติศักดิ์ ชละเอม** — ผลงานประกอบการสมัครฝึกงาน บริษัท สยามโตโยต้า
+
+## สำหรับกรรมการ
+
+| สิ่งที่ส่ง | ลิงก์ |
+|---|---|
+| 🌐 ระบบที่ใช้งานได้จริง (Demo) | **<https://worktimelog-nine.vercel.app>** (เปิดบนมือถือได้) |
+| 💻 (1) โค้ดทั้งหมด | [`src/`](src/) (ASP.NET Core 8 Web API + หน้าเว็บ) · [`tests/`](tests/) (xUnit 40 กรณี) |
+| 🗄️ (2) สคริปต์ฐานข้อมูล | [`database/submission/`](database/submission/) — [PostgreSQL](database/submission/worktimelog_postgresql.sql) · [MySQL 8](database/submission/worktimelog_mysql.sql) |
+| 📘 (3) คู่มือวิธีใช้ | [`docs/manual/`](docs/manual/) — [PDF](docs/manual/คู่มือการใช้งาน_WorkTimeLog.pdf) · [Word](docs/manual/คู่มือการใช้งาน_WorkTimeLog.docx) |
+| 🔐 หน้าแอดมิน | <https://worktimelog-nine.vercel.app/admin/login> (ต้องใช้รหัสผ่าน ขอได้จากผู้จัดทำ) |
+| 📄 API (Swagger) | <https://worktimelog-nine.vercel.app/swagger> |
+
+### ภาพหน้าจอ
+
+| หน้าหลัก | แจ้งเตือนเมื่อเวลารวมเกิน 480 นาที | สรุปตามโครงการ |
+|---|---|---|
+| ![หน้าหลัก](docs/manual/images/01-home.png) | ![เกิน 480 นาที](docs/manual/images/03-error-480.png) | ![สรุปตามโครงการ](docs/manual/images/04-summary.png) |
+
+### ภาพรวม
+
 ระบบสำหรับนักศึกษา 1 คน ใช้บันทึกเวลาที่ใช้กับงาน/โครงการในแต่ละวัน จำกัดเวลารวมไม่เกิน **480 นาทีต่อวัน**
+(ไม่นับรายการที่ยกเลิก, แก้ไขแล้วใช้ค่าใหม่แทนค่าเดิมก่อนรวม, ยกเลิกแบบ soft cancel และกู้คืนได้)
 ใช้งานได้ทั้งบนคอมพิวเตอร์และมือถือ (responsive)
+
+### สถาปัตยกรรม 3 ชั้น
+
+```mermaid
+flowchart TB
+    subgraph P["ชั้นนำเสนอ (Presentation)"]
+        UI["หน้าเว็บ HTML + Bootstrap 5 + JavaScript (fetch)<br/>index.html · /admin"]
+    end
+    subgraph B["ชั้นตรรกะทางธุรกิจ (Business Logic) — ASP.NET Core 8"]
+        C["Controllers / Endpoints<br/>/api/entries · /api/projects · /api/summary · /api/database · /api/admin"]
+        S["Services<br/>TimeEntryService (กติกา 480 นาที) · SummaryService · ProjectService · DatabaseService"]
+        C --> S
+    end
+    subgraph D["ชั้นข้อมูล (Data)"]
+        EF["Entity Framework Core 8 (AppDbContext, Migrations)"]
+        PG[("PostgreSQL บน Neon<br/>Projects · TimeEntries · AdminLoginAttempts")]
+        EF --> PG
+    end
+    UI -- "HTTPS / JSON" --> C
+    S --> EF
+```
+
+### ER Diagram
+
+```mermaid
+erDiagram
+    Projects ||--o{ TimeEntries : "มี"
+    Projects {
+        int Id PK
+        varchar Name UK "ไม่ซ้ำ (ไม่สนตัวพิมพ์) ≤100"
+        boolean IsActive "ค่าเริ่มต้น true"
+    }
+    TimeEntries {
+        int Id PK
+        date WorkDate "มี index"
+        int ProjectId FK
+        varchar Description "≤500"
+        int Minutes "CHECK 1–480"
+        varchar Note "nullable ≤500"
+        boolean IsCancelled "soft cancel"
+        timestamptz CreatedAt
+        timestamptz UpdatedAt
+    }
+    AdminLoginAttempts {
+        bigint Id PK
+        varchar IpAddress
+        timestamptz AttemptedAt
+    }
+```
+
+### คู่มือการติดตั้งสำหรับนักพัฒนา (ย่อ)
+
+```powershell
+winget install Microsoft.DotNet.SDK.8                         # 1) ติดตั้ง .NET 8 SDK
+git clone https://github.com/Folktalomlok/WorkTimeLog.git; cd WorkTimeLog
+dotnet restore; dotnet tool restore                           # 2) คืนค่า package และ dotnet-ef
+# 3) ตั้งค่าความลับด้วย user-secrets (ไม่เก็บในไฟล์โปรเจกต์) — ข้ามได้ถ้าจะใช้ SQLite
+dotnet user-secrets set "ConnectionStrings:Default" "<connection string ของ PostgreSQL>" --project src/WorkTimeLog.Api
+dotnet user-secrets set "ADMIN_PASSWORD" "<รหัสผ่านแอดมิน>" --project src/WorkTimeLog.Api
+dotnet run --project src/WorkTimeLog.Api                      # 4) รัน → http://localhost:5000
+dotnet test                                                   # 5) ทดสอบ (40 กรณี)
+vercel.cmd --prod                                             # 6) deploy (หรือ git push → Vercel auto-deploy)
+```
+
+รายละเอียดเต็มอยู่ในหัวข้อ 2–4 ด้านล่าง (ติดตั้ง, user-secrets, Codespaces, Render, Vercel)
+
+---
 
 🔗 **Demo (Vercel):** <https://worktimelog-nine.vercel.app> · หน้าแอดมิน (ต้องใช้รหัส): <https://worktimelog-nine.vercel.app/admin> · Swagger: <https://worktimelog-nine.vercel.app/swagger>
 
