@@ -7,3 +7,6 @@ TestResults/
 *.db
 *.db-shm
 *.db-wal
+
+# log จาก start-mobile.ps1
+logs/

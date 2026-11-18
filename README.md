@@ -38,6 +38,9 @@ WorkTimeLog/
 │  └─ SummaryAndProjectTests.cs
 ├─ database/schema.sql               ← CREATE TABLE (SQLite) + seed
 ├─ docs/ER-diagram.md                ← Mermaid erDiagram
+├─ start-mobile.ps1                  ← รันเซิร์ฟเวอร์ + Cloudflare Tunnel
+├─ Dockerfile, .dockerignore         ← สำหรับ deploy ด้วย Docker
+├─ render.yaml                       ← Render Blueprint
 └─ README.md
 ```
 
@@ -147,6 +150,48 @@ netsh advfirewall firewall add rule name="WorkTimeLog 5000" dir=in action=allow 
 
 เปิดเบราว์เซอร์บนมือถือ แล้วพิมพ์ `http://<IP ของเครื่อง>:5000` เช่น `http://192.168.1.45:5000`
 (มือถือต้องต่ออินเทอร์เน็ตได้ด้วย เพราะหน้าเว็บโหลด Bootstrap จาก CDN)
+
+### 4.4 เปิดผ่านอินเทอร์เน็ตด้วย Cloudflare Tunnel (ไม่ต้องอยู่ Wi-Fi เดียวกัน)
+
+ใช้สคริปต์ `start-mobile.ps1` ที่ root ของโปรเจกต์ สคริปต์จะ
+
+1. รันเซิร์ฟเวอร์ (`dotnet run --project src/WorkTimeLog.Api`) ถ้ายังไม่ได้รัน
+2. เปิด `cloudflared tunnel --url http://localhost:5000`
+3. แสดงลิงก์ `https://xxxx.trycloudflare.com` และคัดลอกลง clipboard ให้
+
+ต้องติดตั้ง cloudflared ก่อน (ครั้งเดียว): `winget install --id Cloudflare.cloudflared`
+
+```powershell
+cd C:\dev\WorkTimeLog
+powershell -ExecutionPolicy Bypass -File .\start-mobile.ps1
+```
+
+- เปิดลิงก์ที่แสดงบนมือถือได้เลย (ใช้ 4G/5G หรือ Wi-Fi ไหนก็ได้) ถ้าเปิดแล้วขึ้น error ให้รอประมาณ 10–30 วินาทีแล้วลองใหม่
+- **ลิงก์จะเปลี่ยนทุกครั้ง** ที่รันสคริปต์ใหม่ (เป็น Quick Tunnel แบบไม่ต้องมีบัญชี Cloudflare)
+- **หยุด**: กด `Ctrl+C` ในหน้าต่างที่รันสคริปต์ เซิร์ฟเวอร์และ tunnel จะหยุดพร้อมกัน
+- ถ้าปิดหน้าต่างไปแล้วแต่ยังมีโปรแกรมค้าง ให้รัน
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File .\start-mobile.ps1 -Stop
+  ```
+  (คำสั่งนี้หยุด `WorkTimeLog.Api` และ `cloudflared` **ทุกตัว** ในเครื่อง)
+- log อยู่ในโฟลเดอร์ `logs/` (`server.log`, `tunnel.log`)
+- ⚠️ ระบบนี้ไม่มี login ใครที่ได้ลิงก์ไปจะเห็นและแก้ไขข้อมูลได้ทั้งหมด อย่าส่งลิงก์ต่อ และหยุด tunnel เมื่อเลิกใช้
+- แอปไม่ได้ใช้ `UseHttpsRedirection` (Cloudflare ทำ HTTPS ให้แล้ว แล้วส่งต่อมาที่แอปเป็น HTTP) ลิงก์จึงไม่วน redirect
+
+### 4.5 Deploy ขึ้น Render.com (แผนฟรี)
+
+ไฟล์ที่เกี่ยวข้อง: `Dockerfile`, `.dockerignore`, `render.yaml`
+
+| Environment variable | ค่าบน Render | ความหมาย |
+|---|---|---|
+| `PORT` | Render ตั้งให้เอง (ปกติ 10000) | พอร์ตที่แอปฟัง (ไม่มีค่า → 5000) |
+| `DB_PATH` | `/app/data/worklog.db` | path ไฟล์ SQLite (ไม่มีค่า → `worklog.db` ในโฟลเดอร์โปรเจกต์) |
+| `ASPNETCORE_ENVIRONMENT` | `Production` | |
+
+- ตอนเริ่มทำงาน แอปรัน `Database.Migrate()` และใส่ข้อมูลตัวอย่างให้อัตโนมัติ
+- Swagger เปิดทุก environment: `https://<ชื่อแอป>.onrender.com/swagger`
+- แผนฟรีไม่มี disk ถาวร → **ข้อมูลรีเซ็ตกลับเป็นข้อมูลตัวอย่างทุกครั้งที่ deploy / รีสตาร์ต / เครื่องหลับ**
+- อัปเดต: แก้โค้ด → `git add -A` → `git commit -m "..."` → `git push` → Render build และ deploy ให้อัตโนมัติ
 
 ---
 

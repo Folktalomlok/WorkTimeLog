@@ -15,15 +15,26 @@ Console.OutputEncoding = Encoding.UTF8;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ---------- Kestrel: ฟังที่ http://0.0.0.0:5000 ให้มือถือใน Wi-Fi เดียวกันเข้าได้ ----------
-var port = builder.Configuration.GetValue("Port", 5000);
+// ---------- Kestrel: ฟังที่ http://0.0.0.0:{PORT} ----------
+// Render (และ host อื่น ๆ) กำหนดพอร์ตผ่าน environment variable PORT ถ้าไม่มีใช้ 5000
+var port = int.TryParse(Environment.GetEnvironmentVariable("PORT"), out var envPort)
+    ? envPort
+    : builder.Configuration.GetValue("Port", 5000);
 builder.WebHost.ConfigureKestrel(o => o.Listen(IPAddress.Any, port));
+// ไม่ใช้ UseHttpsRedirection: Render / Cloudflare ทำ HTTPS ที่ด้านหน้าแล้วส่งต่อมาเป็น HTTP
 
-// ---------- Database (SQLite: worklog.db ในโฟลเดอร์โปรเจกต์ API) ----------
+// ---------- Database (SQLite) ----------
+// path อ่านจาก environment variable DB_PATH ถ้าไม่มีใช้ connection string เดิม (worklog.db ในโฟลเดอร์โปรเจกต์ API)
 var cs = new SqliteConnectionStringBuilder(
     builder.Configuration.GetConnectionString("Default") ?? "Data Source=worklog.db");
+var dbPath = Environment.GetEnvironmentVariable("DB_PATH");
+if (!string.IsNullOrWhiteSpace(dbPath))
+    cs.DataSource = dbPath;
 if (!Path.IsPathRooted(cs.DataSource))
     cs.DataSource = Path.Combine(builder.Environment.ContentRootPath, cs.DataSource);
+var dbDir = Path.GetDirectoryName(cs.DataSource);
+if (!string.IsNullOrEmpty(dbDir))
+    Directory.CreateDirectory(dbDir);
 builder.Services.AddDbContext<AppDbContext>(o => o.UseSqlite(cs.ToString()));
 
 // ---------- Services ----------
@@ -88,6 +99,7 @@ app.Lifetime.ApplicationStarted.Register(() =>
     Console.WriteLine();
     Console.WriteLine("==============================================");
     Console.WriteLine(" ระบบบันทึกเวลาปฏิบัติงาน พร้อมใช้งาน");
+    Console.WriteLine($"  ฐานข้อมูล    : {cs.DataSource}");
     Console.WriteLine($"  บนเครื่องนี้ : http://localhost:{port}");
     Console.WriteLine($"  Swagger      : http://localhost:{port}/swagger");
     foreach (var ip in GetLanAddresses())
